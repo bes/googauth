@@ -1,0 +1,20 @@
+[package]
+name = "googauth"
+version = "0.1.0"
+authors = ["Erik Zivkovic"]
+edition = "2018"
+
+[dependencies]
+openidconnect = { git = "https://github.com/ramosbugs/openidconnect-rs", rev = "8bda77aa52d7ef4d2227e004b327d4e9fb42df1d" }
+env_logger = "0.5"
+failure = "0.1"
+base64 = "0.9"
+rand = "0.6"
+url = "1.0"
+serde = "1.0.97"
+serde_json = "1.0.40"
+serde_derive = "1.0.97"
+dirs = "2.0.1"
+simple-error = "0.2.1"
+clap = "2.33.0"
+webbrowser = "0.5.1"
