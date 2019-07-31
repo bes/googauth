@@ -185,5 +185,7 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
         }
     }
 
-    Ok(())
+    Err(SimpleError::new(
+        "Could not get a response from the login flow",
+    ))
 }

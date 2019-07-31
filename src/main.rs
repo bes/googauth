@@ -21,6 +21,8 @@ use crate::googauth::config_file::{ConfigFile, Token};
 use crate::googauth::login_flow::google_login;
 use crate::googauth::refresh_flow::refresh_google_login;
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 fn main() {
     env_logger::init();
 
@@ -29,11 +31,10 @@ fn main() {
         .required(true)
         .index(1)
         .help("The configuration name")
-        .long_help("The configuration will cache the refresh token and other values to avoid reauthorization on reuse")
-        .help("Configuration name");
+        .long_help("The configuration will cache the refresh token and other values to avoid reauthorization on reuse");
 
     let app = App::new("googauth")
-        .version("1.0")
+        .version(VERSION)
         .about("Request and store Google OpenID (OAuth) tokens")
         .subcommand(SubCommand::with_name("login")
             .arg(config_name_arg.clone())
@@ -213,8 +214,13 @@ fn main() {
         ("accesstoken", Some(matches)) => {
             let config_name = matches.value_of("config").unwrap().to_string();
 
-            let mut config = ConfigFile::read_config(&config_name)
-                .expect(&format!("No such configuration: {}", &config_name));
+            let mut config = match ConfigFile::read_config(&config_name) {
+                Some(config) => config,
+                None => {
+                    print_error_and_exit(&format!("No such configuration: {}", &config_name));
+                    unreachable!()
+                }
+            };
 
             check_token(config.access_token.clone(), &mut config);
 
@@ -232,8 +238,13 @@ fn main() {
         ("idtoken", Some(matches)) => {
             let config_name = matches.value_of("config").unwrap().to_string();
 
-            let mut config = ConfigFile::read_config(&config_name)
-                .expect(&format!("No such configuration: {}", &config_name));
+            let mut config = match ConfigFile::read_config(&config_name) {
+                Some(config) => config,
+                None => {
+                    print_error_and_exit(&format!("No such configuration: {}", &config_name));
+                    unreachable!()
+                }
+            };
 
             check_token(config.id_token.clone(), &mut config);
 
@@ -275,6 +286,7 @@ fn check_token(token: Option<Token>, config: &mut ConfigFile) {
             Ok(_) => {}
             Err(e) => {
                 print_error_and_exit(&e.to_string());
+                unreachable!()
             }
         }
     }

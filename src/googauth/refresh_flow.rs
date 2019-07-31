@@ -82,5 +82,5 @@ pub fn refresh_google_login(config: &mut ConfigFile) -> Result<(), SimpleError> 
     let id_token_exp = id_token_claims.expiration().timestamp() as u64;
     config.id_token = Some(Token::new(id_token.to_string(), id_token_exp));
 
-    Ok(())
+    return config.save_config();
 }

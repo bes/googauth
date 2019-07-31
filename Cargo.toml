@@ -1,6 +1,6 @@
 [package]
 name = "googauth"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Erik Zivkovic"]
 edition = "2018"
 
@@ -18,3 +18,7 @@ dirs = "2.0.1"
 simple-error = "0.2.1"
 clap = "2.33.0"
 webbrowser = "0.5.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
