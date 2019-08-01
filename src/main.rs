@@ -63,6 +63,7 @@ fn main() {
                     .short("o")
                     .takes_value(true)
                     .multiple(true)
+                    .use_delimiter(true)
                     .validator(|scopes| {
                         if scopes.len() > 0 {
                             return Ok(());

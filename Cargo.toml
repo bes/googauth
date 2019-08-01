@@ -1,6 +1,6 @@
 [package]
 name = "googauth"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Erik Zivkovic"]
 edition = "2018"
 
