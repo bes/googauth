@@ -36,6 +36,9 @@ fn main() {
     let app = App::new("googauth")
         .version(VERSION)
         .about("Request and store Google OpenID (OAuth) tokens")
+        .subcommand(SubCommand::with_name("list")
+            .help("List all the current profiles")
+        )
         .subcommand(SubCommand::with_name("login")
             .arg(config_name_arg.clone())
             .arg(
@@ -93,6 +96,18 @@ fn main() {
     let matches = app.get_matches();
 
     match matches.subcommand() {
+        ("list", Some(_)) => {
+            let config_list = match ConfigFile::list_configs() {
+                Some(config_list) => config_list,
+                None => {
+                    print_success_and_exit("No configs available");
+                    unreachable!()
+                }
+            };
+            for config_name in config_list {
+                println!("{}", &config_name);
+            }
+        }
         ("login", Some(matches)) => {
             let config_name = match matches.value_of("config") {
                 Some(config_name) => config_name,
@@ -159,7 +174,7 @@ fn main() {
                         }
                     }
 
-                    match ConfigFile::googauth_file(&config_name) {
+                    match ConfigFile::config_file(&config_name) {
                         Some(config) => match config.to_str() {
                             Some(config_str) => println!("Saved configuration to {}", config_str),
                             None => {}
@@ -269,6 +284,11 @@ fn main() {
 fn print_error_and_exit(error_str: &str) {
     eprintln!("Error: {}", error_str);
     exit(1);
+}
+
+fn print_success_and_exit(success_str: &str) {
+    println!("{}", success_str);
+    exit(0);
 }
 
 fn check_token(token: Option<Token>, config: &mut ConfigFile) {

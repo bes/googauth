@@ -1,6 +1,7 @@
 use dirs::home_dir;
 use serde::{Deserialize, Serialize};
 use simple_error::SimpleError;
+use std::fs;
 use std::fs::{create_dir_all, set_permissions, File, Permissions};
 use std::io::{BufReader, BufWriter};
 use std::os::unix::fs::PermissionsExt;
@@ -54,7 +55,7 @@ impl Token {
 }
 
 impl ConfigFile {
-    pub fn googauth_dir() -> Option<PathBuf> {
+    pub fn config_dir() -> Option<PathBuf> {
         let mut config_dir = match home_dir() {
             None => {
                 return None;
@@ -65,14 +66,41 @@ impl ConfigFile {
         Some(config_dir)
     }
 
-    pub fn googauth_file(name: &str) -> Option<PathBuf> {
-        let mut config_dir = ConfigFile::googauth_dir()?;
+    pub fn config_file(name: &str) -> Option<PathBuf> {
+        let mut config_dir = ConfigFile::config_dir()?;
         config_dir.push(name);
         Some(config_dir)
     }
 
+    pub fn list_configs() -> Option<Vec<String>> {
+        let config_dir = ConfigFile::config_dir()?;
+
+        if config_dir.is_dir() {
+            let mut result = Vec::<String>::new();
+            match fs::read_dir(config_dir) {
+                Ok(dirs) => {
+                    for entry in dirs {
+                        match entry {
+                            Ok(entry) => {
+                                let path = entry.path();
+                                if path.is_file() {
+                                    let file_name = path.file_name()?.to_str()?;
+                                    result.push(file_name.to_string());
+                                }
+                            }
+                            Err(_) => return None,
+                        }
+                    }
+                }
+                Err(_) => return None,
+            }
+            return Some(result);
+        }
+        None
+    }
+
     pub fn read_config(name: &str) -> Option<ConfigFile> {
-        let config_dir = ConfigFile::googauth_file(name)?;
+        let config_dir = ConfigFile::config_file(name)?;
 
         let config_file = match File::open(config_dir.as_path()) {
             Ok(f) => f,
@@ -91,7 +119,7 @@ impl ConfigFile {
 
     pub fn save_config(&self) -> Result<(), SimpleError> {
         let mut config_dir =
-            require_with!(ConfigFile::googauth_dir(), "Could not get home directory");
+            require_with!(ConfigFile::config_dir(), "Could not get home directory");
 
         match create_dir_all(config_dir.as_path()) {
             Ok(_) => {
