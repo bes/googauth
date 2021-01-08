@@ -1,8 +1,13 @@
 [package]
 name = "googauth"
 version = "0.5.0"
-authors = ["Erik Zivkovic"]
+authors = ["Erik Zivkovic <erik@zivkovic.se>"]
 edition = "2018"
+license = "MIT"
+description = "An application that uses OpenID Connect to sign in to a Google account, and store the credentials locally for ease of use"
+homepage = "https://github.com/bes/googauth"
+repository = "https://github.com/bes/googauth"
+readme = "README.md"
 
 [dependencies]
 openidconnect = "1.1.1"
