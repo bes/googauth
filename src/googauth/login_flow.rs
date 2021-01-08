@@ -46,7 +46,7 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
         google_client_id,
         Some(google_client_secret),
     )
-    .set_redirect_uri(RedirectUrl::new(redirect_url));
+    .set_redirect_uri(RedirectUrl::new(redirect_url.to_string()).map_err(|e| SimpleError::with("Could not convert redirect URL to string", e))?);
 
     let (authorize_url, csrf_state, nonce) = client
         .authorize_url(
@@ -148,14 +148,14 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
             let id_token_verifier: CoreIdTokenVerifier = client.id_token_verifier();
             let id_token_claims: &CoreIdTokenClaims = token_response
                 .extra_fields()
-                .id_token()
+                .id_token().ok_or(SimpleError::new("No ID token present in extra fields"))?
                 .claims(&id_token_verifier, &nonce)
                 .unwrap_or_else(|err| {
                     handle_error(&err, "Failed to verify ID token");
                     unreachable!();
                 });
 
-            let id_token = token_response.id_token().to_string();
+            let id_token = token_response.id_token().ok_or(SimpleError::new("No ID token present"))?.to_string();
             let refresh_token = match token_response.refresh_token() {
                 Some(refresh_token) => refresh_token,
                 None => {

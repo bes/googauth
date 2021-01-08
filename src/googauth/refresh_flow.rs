@@ -3,11 +3,12 @@ use super::errors::handle_error;
 use openidconnect::core::{CoreClient, CoreIdTokenVerifier, CoreProviderMetadata};
 use openidconnect::reqwest::http_client;
 use openidconnect::{
-    ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken, RefreshTokenResponse,
+    ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken,
     Scope,
 };
 use simple_error::SimpleError;
 use std::time::{SystemTime, UNIX_EPOCH};
+use openidconnect::TokenResponse;
 
 pub fn refresh_google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
     let google_client_id = ClientId::new(config.client_id.to_string());
@@ -72,7 +73,7 @@ pub fn refresh_google_login(config: &mut ConfigFile) -> Result<(), SimpleError> 
         }
     };
     let id_token_verifier: CoreIdTokenVerifier = client.id_token_verifier();
-    let id_token_claims = match id_token.claims(&id_token_verifier, |_| Ok(())) {
+    let id_token_claims = match id_token.claims(&id_token_verifier, |_: Option<&_>| Ok(())) {
         Ok(claims) => claims,
         Err(e) => {
             println!("ERR {}", e);
