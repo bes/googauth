@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use webbrowser;
 
-use super::config_file::{ConfigFile, Token};
+use googauth_lib::{ConfigFile, Token};
 use super::errors::handle_error;
 use openidconnect::core::{
     CoreAuthPrompt, CoreClient, CoreIdTokenClaims, CoreIdTokenVerifier, CoreProviderMetadata,

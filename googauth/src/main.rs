@@ -17,7 +17,7 @@ use clap::{App, Arg, SubCommand};
 
 mod googauth;
 
-use crate::googauth::config_file::{ConfigFile, Token};
+use googauth_lib::{ConfigFile, Token};
 use crate::googauth::login_flow::google_login;
 use crate::googauth::refresh_flow::refresh_google_login;
 

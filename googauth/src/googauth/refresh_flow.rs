@@ -1,4 +1,4 @@
-use super::config_file::{ConfigFile, Token};
+use googauth_lib::{ConfigFile, Token};
 use super::errors::handle_error;
 use openidconnect::core::{CoreClient, CoreIdTokenVerifier, CoreProviderMetadata};
 use openidconnect::reqwest::http_client;
