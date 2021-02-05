@@ -1,31 +1,12 @@
-#[macro_use]
-extern crate simple_error;
-
-extern crate base64;
-extern crate env_logger;
-extern crate failure;
-extern crate openidconnect;
-extern crate rand;
-extern crate serde_derive;
-extern crate serde_json;
-extern crate url;
-
 use std::process::exit;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{App, Arg, SubCommand};
 
-mod googauth;
+use googauth_lib::{google_login, ConfigFile, get_access_token_from_config, check_token};
 
-use googauth_lib::{ConfigFile, Token};
-use crate::googauth::login_flow::google_login;
-use crate::googauth::refresh_flow::refresh_google_login;
-
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
-    env_logger::init();
-
     let config_name_arg = Arg::with_name("config")
         .value_name("CONFIG NAME")
         .required(true)
@@ -68,7 +49,7 @@ fn main() {
                     .multiple(true)
                     .use_delimiter(true)
                     .validator(|scopes| {
-                        if scopes.len() > 0 {
+                        if !scopes.is_empty() {
                             return Ok(());
                         }
                         Err(String::from("You must specify at least one scope"))
@@ -98,8 +79,9 @@ fn main() {
     match matches.subcommand() {
         ("list", Some(_)) => {
             let config_list = match ConfigFile::list_configs() {
-                Some(config_list) => config_list,
-                None => {
+                Ok(config_list) => config_list,
+                Err(err) => {
+                    eprintln!("Error: {:?}", err);
                     print_success_and_exit("No configs available");
                     unreachable!()
                 }
@@ -117,7 +99,8 @@ fn main() {
                 }
             };
             let mut config = match ConfigFile::read_config(&config_name) {
-                None => {
+                Err(_err) => {
+                    // TODO: Check err?
                     let client_id = match matches.value_of("clientid") {
                         Some(client_id) => client_id,
                         None => {
@@ -174,40 +157,26 @@ fn main() {
                         }
                     }
 
-                    match ConfigFile::config_file(&config_name) {
-                        Some(config) => match config.to_str() {
-                            Some(config_str) => println!("Saved configuration to {}", config_str),
-                            None => {}
-                        },
-                        None => {}
+                    if let Ok(config) = ConfigFile::config_file(&config_name) {
+                        if let Some(config_str) = config.to_str() {
+                            println!("Saved configuration to {}", config_str)
+                        }
                     }
 
                     new_config
                 }
-                Some(mut config) => {
-                    match matches.value_of("clientid") {
-                        Some(client_id) => {
-                            config.client_id = client_id.to_string();
-                        }
-                        None => {}
+                Ok(mut config) => {
+                    if let Some(client_id) = matches.value_of("clientid") {
+                        config.client_id = client_id.to_string();
                     }
-                    match matches.value_of("secret") {
-                        Some(client_secret) => {
-                            config.client_secret = client_secret.to_string();
-                        }
-                        None => {}
+                    if let Some(client_secret) = matches.value_of("secret") {
+                        config.client_secret = client_secret.to_string();
                     }
-                    match matches.values_of_lossy("scopes") {
-                        Some(scopes) => {
-                            config.scopes = scopes;
-                        }
-                        None => {}
+                    if let Some(scopes) = matches.values_of_lossy("scopes") {
+                        config.scopes = scopes;
                     }
-                    match matches.value_of("redirect") {
-                        Some(redirect_url) => {
-                            config.redirect_url = redirect_url.to_string();
-                        }
-                        None => {}
+                    if let Some(redirect_url) = matches.value_of("redirect") {
+                        config.redirect_url = redirect_url.to_string();
                     };
 
                     config
@@ -229,40 +198,30 @@ fn main() {
         }
         ("accesstoken", Some(matches)) => {
             let config_name = matches.value_of("config").unwrap().to_string();
-
-            let mut config = match ConfigFile::read_config(&config_name) {
-                Some(config) => config,
-                None => {
-                    print_error_and_exit(&format!("No such configuration: {}", &config_name));
-                    unreachable!()
-                }
+            let access_token = match get_access_token_from_config(&config_name) {
+                Ok(access_token) => access_token,
+                Err(e) => {
+                    print_error_and_exit(&e.to_string());
+                    unreachable!();
+                },
             };
-
-            check_token(config.access_token.clone(), &mut config);
-
-            match &config.access_token {
-                Some(access_token) => println!("{}", access_token.secret),
-                None => {
-                    print_error_and_exit(&format!(
-                        "Could not read access token from {}. Is the configuration corrupt?",
-                        &config.name
-                    ));
-                    unreachable!()
-                }
-            };
+            println!("{}", access_token.secret);
         }
         ("idtoken", Some(matches)) => {
             let config_name = matches.value_of("config").unwrap().to_string();
 
             let mut config = match ConfigFile::read_config(&config_name) {
-                Some(config) => config,
-                None => {
-                    print_error_and_exit(&format!("No such configuration: {}", &config_name));
-                    unreachable!()
+                Ok(config) => config,
+                Err(err) => {
+                    eprintln!("Error when reading configuration: {:?}", err);
+                    exit(1);
                 }
             };
 
-            check_token(config.id_token.clone(), &mut config);
+            if let Err(err) = check_token(config.id_token.clone(), &mut config) {
+                eprintln!("Error when checking the token: {:?}", err);
+                exit(1);
+            }
 
             match &config.id_token {
                 Some(id_token) => println!("{}", id_token.secret),
@@ -289,26 +248,4 @@ fn print_error_and_exit(error_str: &str) {
 fn print_success_and_exit(success_str: &str) {
     println!("{}", success_str);
     exit(0);
-}
-
-fn check_token(token: Option<Token>, config: &mut ConfigFile) {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    let token_expiration = match token {
-        Some(token) => token.exp,
-        None => 0,
-    };
-
-    if token_expiration < now {
-        match refresh_google_login(config) {
-            Ok(_) => {}
-            Err(e) => {
-                print_error_and_exit(&e.to_string());
-                unreachable!()
-            }
-        }
-    }
 }

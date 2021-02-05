@@ -1,23 +1,7 @@
 # googauth
 
-This repository holds a command line tool ([googauth](./googauth)),
-as well as a library ([googauth-lib](./googauth-lib)).
-
-It tries to solve the problem of getting a Google user's access or id token
-in a rust program programmatically, or on the command line using the `googauth` command.
-
-Pull requests are welcome.
-
-# How to use the library
-
-Cargo.toml:
-
-```toml
-[dependencies]
-googauth-lib = "0.6.0"
-```
-
-# How to use the application
+Please see [googauth-lib](https://crates.io/crates/googauth-lib)
+if you want to integrate this tool into your own code.
 
 ## Features
 
@@ -36,7 +20,7 @@ Using the help section of the program should get you started.
 ```
 
 Every required command parameter can be provided using a long form `./googauth --long "mylong"`,
-a short form `./googauth -s "myshort"`, as well as an environment variable `ENV="myenv" ./googauth [...]`. 
+a short form `./googauth -s "myshort"`, as well as an environment variable `ENV="myenv" ./googauth [...]`.
 
 ## Login
 

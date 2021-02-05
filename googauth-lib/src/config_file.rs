@@ -1,12 +1,15 @@
 use dirs::home_dir;
 use serde::{Deserialize, Serialize};
-use simple_error::SimpleError;
 use std::fs;
 use std::fs::{create_dir_all, set_permissions, File, Permissions};
 use std::io::{BufReader, BufWriter};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use crate::errors::LibError;
 
+/// A configuration file that saves the information necessary
+/// to fetch tokens and to be able to refresh said tokens when
+/// needed.
 #[derive(Serialize, Deserialize)]
 pub struct ConfigFile {
     pub version: u32,
@@ -25,7 +28,7 @@ impl ConfigFile {
         name: &str,
         client_id: &str,
         client_secret: &str,
-        scopes: &Vec<String>,
+        scopes: &[String],
         redirect_url: &str,
     ) -> ConfigFile {
         ConfigFile {
@@ -33,7 +36,7 @@ impl ConfigFile {
             name: name.to_string(),
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
-            scopes: scopes.into_iter().map(|s| s.to_string()).collect(),
+            scopes: scopes.iter().map(|s| s.to_string()).collect(),
             redirect_url: redirect_url.to_string(),
             refresh_token: None,
             id_token: None,
@@ -55,117 +58,71 @@ impl Token {
 }
 
 impl ConfigFile {
-    pub fn config_dir() -> Option<PathBuf> {
+    pub fn config_dir() -> Result<PathBuf, LibError> {
         let mut config_dir = match home_dir() {
             None => {
-                return None;
+                return Err(LibError::HomeDirectoryNotFound);
             }
             Some(dir) => dir,
         };
         config_dir.push(".googauth");
-        Some(config_dir)
+        Ok(config_dir)
     }
 
-    pub fn config_file(name: &str) -> Option<PathBuf> {
+    pub fn config_file(name: &str) -> Result<PathBuf, LibError> {
         let mut config_dir = ConfigFile::config_dir()?;
         config_dir.push(name);
-        Some(config_dir)
+        Ok(config_dir)
     }
 
-    pub fn list_configs() -> Option<Vec<String>> {
+    pub fn list_configs() -> Result<Vec<String>, LibError> {
         let config_dir = ConfigFile::config_dir()?;
 
         if config_dir.is_dir() {
             let mut result = Vec::<String>::new();
-            match fs::read_dir(config_dir) {
-                Ok(dirs) => {
-                    for entry in dirs {
-                        match entry {
-                            Ok(entry) => {
-                                let path = entry.path();
-                                if path.is_file() {
-                                    let file_name = path.file_name()?.to_str()?;
-                                    result.push(file_name.to_string());
-                                }
-                            }
-                            Err(_) => return None,
-                        }
-                    }
+            let dirs = fs::read_dir(config_dir)?;
+            for entry in dirs {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_file() {
+                    let file_name = path.file_name().ok_or(LibError::FilenameError)?.to_str().ok_or(LibError::FilenameError)?;
+                    result.push(file_name.to_string());
                 }
-                Err(_) => return None,
             }
-            return Some(result);
+            return Ok(result);
         }
-        None
+        Err(LibError::ConfigsDirectoryNotADirectory(config_dir))
     }
 
-    pub fn read_config(name: &str) -> Option<ConfigFile> {
+    pub fn read_config(name: &str) -> Result<ConfigFile, LibError> {
         let config_dir = ConfigFile::config_file(name)?;
 
-        let config_file = match File::open(config_dir.as_path()) {
-            Ok(f) => f,
-            Err(_) => {
-                return None;
-            }
-        };
+        let config_file = File::open(config_dir.as_path())?;
         let config_file_reader = BufReader::new(config_file);
-        match serde_json::from_reader(config_file_reader) {
-            Ok(s) => Some(s),
-            Err(_) => {
-                return None;
-            }
-        }
+        let config = serde_json::from_reader(config_file_reader)?;
+        Ok(config)
     }
 
-    pub fn save_config(&self) -> Result<(), SimpleError> {
-        let mut config_dir =
-            require_with!(ConfigFile::config_dir(), "Could not get home directory");
+    pub fn save_config(&self) -> Result<(), LibError> {
+        let mut config_dir = ConfigFile::config_dir()?;
 
-        match create_dir_all(config_dir.as_path()) {
-            Ok(_) => {
-                if cfg!(unix) {
-                    match set_permissions(config_dir.as_path(), Permissions::from_mode(0o700)) {
-                        Ok(()) => (),
-                        Err(e) => {
-                            return Err(SimpleError::from(e));
-                        }
-                    }
-                } else {
-                    ()
-                }
-            }
-            Err(e) => {
-                return Err(SimpleError::from(e));
-            }
-        };
+        create_dir_all(config_dir.as_path())?;
+        if cfg!(unix) {
+            set_permissions(config_dir.as_path(), Permissions::from_mode(0o700))?
+        }
 
         config_dir.push(self.name.to_string());
 
-        let config_file = match File::create(config_dir.as_path()) {
-            Ok(f) => f,
-            Err(e) => {
-                return Err(SimpleError::from(e));
-            }
-        };
+        let config_file = File::create(config_dir.as_path())?;
 
         if cfg!(unix) {
-            match set_permissions(config_dir.as_path(), Permissions::from_mode(0o600)) {
-                Ok(()) => (),
-                Err(e) => {
-                    return Err(SimpleError::from(e));
-                }
-            }
+            set_permissions(config_dir.as_path(), Permissions::from_mode(0o600))?;
         }
 
         let config_file_writer = BufWriter::new(config_file);
 
-        match serde_json::to_writer(config_file_writer, self) {
-            Ok(_) => (),
-            Err(e) => {
-                return Err(SimpleError::from(e));
-            }
-        }
+        serde_json::to_writer(config_file_writer, self)?;
 
-        return Ok(());
+        Ok(())
     }
 }

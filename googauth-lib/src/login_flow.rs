@@ -2,10 +2,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use webbrowser;
-
-use googauth_lib::{ConfigFile, Token};
-use super::errors::handle_error;
+use crate::config_file::{ConfigFile, Token};
 use openidconnect::core::{
     CoreAuthPrompt, CoreClient, CoreIdTokenClaims, CoreIdTokenVerifier, CoreProviderMetadata,
     CoreResponseType,
@@ -15,38 +12,25 @@ use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
     OAuth2TokenResponse, RedirectUrl, Scope, TokenResponse,
 };
-use simple_error::SimpleError;
 use url::Url;
+use crate::LibError;
 
-pub fn google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
+pub fn google_login(config: &mut ConfigFile) -> Result<(), LibError> {
     let google_client_id = ClientId::new(config.client_id.to_string());
     let google_client_secret = ClientSecret::new(config.client_secret.to_string());
-    let issuer_url = match IssuerUrl::new("https://accounts.google.com".to_string()) {
-        Ok(issuer_url) => issuer_url,
-        Err(e) => {
-            return Err(SimpleError::with("Invalid issuer URL", e));
-        }
-    };
-    let redirect_url = match Url::parse(&config.redirect_url) {
-        Ok(redirect_url) => redirect_url,
-        Err(e) => {
-            return Err(SimpleError::with("Invalid redirect URL", e));
-        }
-    };
+    let issuer_url = IssuerUrl::new("https://accounts.google.com".to_string())?;
+    let redirect_url = Url::parse(&config.redirect_url)?;
 
     // Fetch Google's OpenID Connect discovery document.
     let provider_metadata = CoreProviderMetadata::discover(&issuer_url, http_client)
-        .unwrap_or_else(|err| {
-            handle_error(&err, "Failed to discover OpenID Provider");
-            unreachable!();
-        });
+        .map_err(|_| LibError::OpenIdError("Failed to discover OpenID Provider".to_string()))?;
 
     let client = CoreClient::from_provider_metadata(
         provider_metadata,
         google_client_id,
         Some(google_client_secret),
     )
-    .set_redirect_uri(RedirectUrl::new(redirect_url.to_string()).map_err(|e| SimpleError::with("Could not convert redirect URL to string", e))?);
+    .set_redirect_uri(RedirectUrl::new(redirect_url.to_string())?);
 
     let (authorize_url, csrf_state, nonce) = client
         .authorize_url(
@@ -64,10 +48,7 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
 
     let authorize_url_string = authorize_url.to_string();
 
-    match webbrowser::open(&authorize_url_string) {
-        Ok(_) => {}
-        Err(e) => return Err(SimpleError::from(e)),
-    }
+    webbrowser::open(&authorize_url_string)?;
 
     println!(
         "If the web browser did not open automatically, you can open this URL in your browser:\n{}\n",
@@ -128,17 +109,14 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
             stream.write_all(response.as_bytes()).unwrap();
 
             if state.secret() != csrf_state.secret() {
-                return Err(SimpleError::new("The state sent to the server, and the state received from the server do not match - this may be a sign of a CSRF attack"));
+                return Err(LibError::TokenCsrfError);
             }
 
             // Exchange the code with a token.
             let token_response = client
                 .exchange_code(code)
                 .request(http_client)
-                .unwrap_or_else(|err| {
-                    handle_error(&err, "Failed to access token endpoint");
-                    unreachable!();
-                });
+                .map_err(|_| LibError::OpenIdError("Failed to access token endpoint".to_string()))?;
 
             let access_token_expires = match token_response.expires_in() {
                 None => 0,
@@ -148,32 +126,17 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
             let id_token_verifier: CoreIdTokenVerifier = client.id_token_verifier();
             let id_token_claims: &CoreIdTokenClaims = token_response
                 .extra_fields()
-                .id_token().ok_or(SimpleError::new("No ID token present in extra fields"))?
+                .id_token().ok_or(LibError::NoIdToken)?
                 .claims(&id_token_verifier, &nonce)
-                .unwrap_or_else(|err| {
-                    handle_error(&err, "Failed to verify ID token");
-                    unreachable!();
-                });
+                .map_err(|_| LibError::OpenIdError("Failed to verify ID token".to_string()))?;
 
-            let id_token = token_response.id_token().ok_or(SimpleError::new("No ID token present"))?.to_string();
-            let refresh_token = match token_response.refresh_token() {
-                Some(refresh_token) => refresh_token,
-                None => {
-                    return Err(SimpleError::new(
-                        "There was no refresh token in the response",
-                    ));
-                }
-            };
+            let id_token = token_response.id_token().ok_or(LibError::NoIdToken)?.to_string();
+            let refresh_token = token_response.refresh_token().ok_or(LibError::NoRefreshToken)?;
             let access_token = token_response.access_token().secret().to_string();
 
-            let scopes = match token_response.scopes() {
-                Some(scopes) => scopes,
-                None => {
-                    return Err(SimpleError::new("There were no scopes in the response"));
-                }
-            };
+            let scopes = token_response.scopes().ok_or(LibError::NoScopes)?;
 
-            config.scopes = scopes.into_iter().map(|scope| scope.to_string()).collect();
+            config.scopes = scopes.iter().map(|scope| scope.to_string()).collect();
             config.refresh_token = Some(refresh_token.secret().to_string());
             config.id_token = Some(Token::new(
                 id_token,
@@ -185,7 +148,5 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), SimpleError> {
         }
     }
 
-    Err(SimpleError::new(
-        "Could not get a response from the login flow",
-    ))
+    Err(LibError::NoResponse)
 }
