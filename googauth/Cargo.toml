@@ -1,6 +1,6 @@
 [package]
 name = "googauth"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Erik Zivkovic <erik@zivkovic.se>"]
 edition = "2018"
 license = "MIT"
@@ -10,5 +10,5 @@ repository = "https://github.com/bes/googauth"
 readme = "README.md"
 
 [dependencies]
-googauth-lib = { path = "../googauth-lib", version = "0.6.0" }
+googauth-lib = { path = "../googauth-lib", version = "0.7.0" }
 clap = "2"
