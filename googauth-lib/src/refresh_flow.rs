@@ -1,14 +1,16 @@
-use crate::config_file::{ConfigFile, Token};
+use crate::config_file::{ConfigBasePath, ConfigFile, Token};
+use crate::errors::LibError;
 use openidconnect::core::{CoreClient, CoreIdTokenVerifier, CoreProviderMetadata};
 use openidconnect::reqwest::http_client;
 use openidconnect::{
-    ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken,
-    Scope, TokenResponse
+    ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken, Scope, TokenResponse,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::LibError;
 
-pub fn refresh_google_login(config: &mut ConfigFile) -> Result<(), LibError> {
+pub fn refresh_google_login(
+    config: &mut ConfigFile,
+    config_base_path: &ConfigBasePath,
+) -> Result<(), LibError> {
     let google_client_id = ClientId::new(config.client_id.to_string());
     let google_client_secret = ClientSecret::new(config.client_secret.to_string());
     let issuer_url =
@@ -70,5 +72,5 @@ pub fn refresh_google_login(config: &mut ConfigFile) -> Result<(), LibError> {
     let id_token_exp = id_token_claims.expiration().timestamp() as u64;
     config.id_token = Some(Token::new(id_token.to_string(), id_token_exp));
 
-    config.save_config()
+    config.save_config(config_base_path)
 }

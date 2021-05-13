@@ -2,7 +2,9 @@ use std::process::exit;
 
 use clap::{App, Arg, SubCommand};
 
-use googauth_lib::{google_login, ConfigFile, get_access_token_from_config, check_token};
+use googauth_lib::{
+    check_token, get_access_token_from_config, google_login, ConfigBasePath, ConfigFile,
+};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -74,11 +76,19 @@ fn main() {
             .arg(config_name_arg.clone())
         );
 
+    let config_base_path = match ConfigBasePath::default() {
+        Ok(googauth_config_base_path) => googauth_config_base_path,
+        Err(err) => {
+            println!("No base path found: {:?}", err);
+            exit(0);
+        }
+    };
+
     let matches = app.get_matches();
 
     match matches.subcommand() {
         ("list", Some(_)) => {
-            let config_list = match ConfigFile::list_configs() {
+            let config_list = match ConfigFile::list_configs(&config_base_path) {
                 Ok(config_list) => config_list,
                 Err(err) => {
                     eprintln!("Error: {:?}", err);
@@ -86,8 +96,12 @@ fn main() {
                     unreachable!()
                 }
             };
-            for config_name in config_list {
-                println!("{}", &config_name);
+            for config_file in config_list {
+                println!(
+                    "{0: <25} | {1: <115}",
+                    config_file.name,
+                    config_file.scopes.join(", ")
+                );
             }
         }
         ("login", Some(matches)) => {
@@ -98,7 +112,8 @@ fn main() {
                     unreachable!()
                 }
             };
-            let mut config = match ConfigFile::read_config(&config_name) {
+            let mut config = match ConfigFile::read_config(&config_name, &config_base_path)
+            {
                 Err(_err) => {
                     // TODO: Check err?
                     let client_id = match matches.value_of("clientid") {
@@ -149,7 +164,7 @@ fn main() {
                         redirect_url,
                     );
 
-                    match new_config.save_config() {
+                    match new_config.save_config(&config_base_path) {
                         Ok(_) => (),
                         Err(e) => {
                             print_error_and_exit(&e.to_string());
@@ -157,7 +172,9 @@ fn main() {
                         }
                     }
 
-                    if let Ok(config) = ConfigFile::config_file(&config_name) {
+                    if let Ok(config) =
+                        ConfigFile::config_file(&config_name, &config_base_path)
+                    {
                         if let Some(config_str) = config.to_str() {
                             println!("Saved configuration to {}", config_str)
                         }
@@ -183,7 +200,7 @@ fn main() {
                 }
             };
 
-            match google_login(&mut config) {
+            match google_login(&mut config, &config_base_path) {
                 Ok(_) => (),
                 Err(e) => {
                     print_error_and_exit(&e.to_string());
@@ -198,19 +215,21 @@ fn main() {
         }
         ("accesstoken", Some(matches)) => {
             let config_name = matches.value_of("config").unwrap().to_string();
-            let access_token = match get_access_token_from_config(&config_name) {
-                Ok(access_token) => access_token,
-                Err(e) => {
-                    print_error_and_exit(&e.to_string());
-                    unreachable!();
-                },
-            };
+            let access_token =
+                match get_access_token_from_config(&config_name, &config_base_path) {
+                    Ok(access_token) => access_token,
+                    Err(e) => {
+                        print_error_and_exit(&e.to_string());
+                        unreachable!();
+                    }
+                };
             println!("{}", access_token.secret);
         }
         ("idtoken", Some(matches)) => {
             let config_name = matches.value_of("config").unwrap().to_string();
 
-            let mut config = match ConfigFile::read_config(&config_name) {
+            let mut config = match ConfigFile::read_config(&config_name, &config_base_path)
+            {
                 Ok(config) => config,
                 Err(err) => {
                     eprintln!("Error when reading configuration: {:?}", err);
@@ -218,7 +237,7 @@ fn main() {
                 }
             };
 
-            if let Err(err) = check_token(config.id_token.clone(), &mut config) {
+            if let Err(err) = check_token(config.id_token.clone(), &mut config, &config_base_path) {
                 eprintln!("Error when checking the token: {:?}", err);
                 exit(1);
             }

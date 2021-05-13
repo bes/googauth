@@ -13,10 +13,13 @@ mod refresh_flow;
 
 /// Given a config name, that has been previously saved by [config_file::ConfigFile],
 /// fetch the access token, potentially refreshing it if needed.
-pub fn get_access_token_from_config(config_name: &str) -> Result<Token, LibError> {
-    let mut config = ConfigFile::read_config(&config_name)?;
+pub fn get_access_token_from_config(
+    config_name: &str,
+    config_base_path: &ConfigBasePath,
+) -> Result<Token, LibError> {
+    let mut config = ConfigFile::read_config(config_name, config_base_path)?;
 
-    check_token(config.access_token.clone(), &mut config)?;
+    check_token(config.access_token.clone(), &mut config, config_base_path)?;
 
     match &config.access_token {
         Some(access_token) => Ok(access_token.clone()),
@@ -26,7 +29,11 @@ pub fn get_access_token_from_config(config_name: &str) -> Result<Token, LibError
 
 /// Given an optional [config_file::Token] and a [config_file::ConfigFile],
 /// check if it's valid and potentially refresh it if it is not.
-pub fn check_token(token: Option<Token>, config: &mut ConfigFile) -> Result<(), LibError> {
+pub fn check_token(
+    token: Option<Token>,
+    config: &mut ConfigFile,
+    config_base_path: &ConfigBasePath,
+) -> Result<(), LibError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -38,7 +45,7 @@ pub fn check_token(token: Option<Token>, config: &mut ConfigFile) -> Result<(), 
     };
 
     if token_expiration < now {
-        refresh_google_login(config)?;
+        refresh_google_login(config, config_base_path)?;
     }
 
     Ok(())

@@ -2,7 +2,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::config_file::{ConfigFile, Token};
+use crate::config_file::{ConfigBasePath, ConfigFile, Token};
+use crate::errors::LibError;
 use openidconnect::core::{
     CoreAuthPrompt, CoreClient, CoreIdTokenClaims, CoreIdTokenVerifier, CoreProviderMetadata,
     CoreResponseType,
@@ -10,12 +11,14 @@ use openidconnect::core::{
 use openidconnect::reqwest::http_client;
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-    OAuth2TokenResponse, RedirectUrl, Scope, TokenResponse,
+    OAuth2TokenResponse, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse,
 };
 use url::Url;
-use crate::LibError;
 
-pub fn google_login(config: &mut ConfigFile) -> Result<(), LibError> {
+pub fn google_login(
+    config: &mut ConfigFile,
+    config_base_path: &ConfigBasePath,
+) -> Result<(), LibError> {
     let google_client_id = ClientId::new(config.client_id.to_string());
     let google_client_secret = ClientSecret::new(config.client_secret.to_string());
     let issuer_url = IssuerUrl::new("https://accounts.google.com".to_string())?;
@@ -32,19 +35,24 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), LibError> {
     )
     .set_redirect_uri(RedirectUrl::new(redirect_url.to_string())?);
 
-    let (authorize_url, csrf_state, nonce) = client
-        .authorize_url(
-            AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
-            CsrfToken::new_random,
-            Nonce::new_random,
-        )
-        // This example is requesting access to the "calendar" features and the user's profile.
+    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+
+    let request = client.authorize_url(
+        AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
+        CsrfToken::new_random,
+        Nonce::new_random,
+    );
+
+    let request = request
         .add_extra_param("access_type", "offline")
         .add_prompt(CoreAuthPrompt::Consent)
-        .add_scope(Scope::new("openid".to_string()))
-        .add_scope(Scope::new("email".to_string()))
-        .add_scope(Scope::new("profile".to_string()))
-        .url();
+        .set_pkce_challenge(pkce_challenge);
+
+    let request = config.scopes.iter().fold(request, |request, scope| {
+        request.add_scope(Scope::new(scope.to_string()))
+    });
+
+    let (authorize_url, csrf_state, nonce) = request.url();
 
     let authorize_url_string = authorize_url.to_string();
 
@@ -115,8 +123,12 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), LibError> {
             // Exchange the code with a token.
             let token_response = client
                 .exchange_code(code)
+                .set_pkce_verifier(pkce_verifier)
                 .request(http_client)
-                .map_err(|_| LibError::OpenIdError("Failed to access token endpoint".to_string()))?;
+                .map_err(|e| {
+                    eprintln!("{:?}", e);
+                    LibError::OpenIdError("Failed to access token endpoint".to_string())
+                })?;
 
             let access_token_expires = match token_response.expires_in() {
                 None => 0,
@@ -126,12 +138,18 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), LibError> {
             let id_token_verifier: CoreIdTokenVerifier = client.id_token_verifier();
             let id_token_claims: &CoreIdTokenClaims = token_response
                 .extra_fields()
-                .id_token().ok_or(LibError::NoIdToken)?
+                .id_token()
+                .ok_or(LibError::NoIdToken)?
                 .claims(&id_token_verifier, &nonce)
                 .map_err(|_| LibError::OpenIdError("Failed to verify ID token".to_string()))?;
 
-            let id_token = token_response.id_token().ok_or(LibError::NoIdToken)?.to_string();
-            let refresh_token = token_response.refresh_token().ok_or(LibError::NoRefreshToken)?;
+            let id_token = token_response
+                .id_token()
+                .ok_or(LibError::NoIdToken)?
+                .to_string();
+            let refresh_token = token_response
+                .refresh_token()
+                .ok_or(LibError::NoRefreshToken)?;
             let access_token = token_response.access_token().secret().to_string();
 
             let scopes = token_response.scopes().ok_or(LibError::NoScopes)?;
@@ -144,7 +162,7 @@ pub fn google_login(config: &mut ConfigFile) -> Result<(), LibError> {
             ));
             config.access_token = Some(Token::new(access_token, access_token_expires));
 
-            return config.save_config();
+            return config.save_config(config_base_path);
         }
     }
 

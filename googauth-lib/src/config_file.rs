@@ -45,6 +45,27 @@ impl ConfigFile {
     }
 }
 
+pub struct ConfigBasePath {
+    path: PathBuf,
+}
+
+impl ConfigBasePath {
+    pub fn default() -> Result<ConfigBasePath, LibError> {
+        let mut config_dir = match home_dir() {
+            None => {
+                return Err(LibError::HomeDirectoryNotFound);
+            }
+            Some(dir) => dir,
+        };
+        config_dir.push(".googauth");
+        Ok(ConfigBasePath { path: config_dir } )
+    }
+
+    pub fn from(path: PathBuf) -> ConfigBasePath {
+        ConfigBasePath { path }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Token {
     pub secret: String,
@@ -58,35 +79,26 @@ impl Token {
 }
 
 impl ConfigFile {
-    pub fn config_dir() -> Result<PathBuf, LibError> {
-        let mut config_dir = match home_dir() {
-            None => {
-                return Err(LibError::HomeDirectoryNotFound);
-            }
-            Some(dir) => dir,
-        };
-        config_dir.push(".googauth");
-        Ok(config_dir)
-    }
-
-    pub fn config_file(name: &str) -> Result<PathBuf, LibError> {
-        let mut config_dir = ConfigFile::config_dir()?;
+    pub fn config_file(name: &str, config_base_path: &ConfigBasePath) -> Result<PathBuf, LibError> {
+        let mut config_dir = config_base_path.path.clone();
         config_dir.push(name);
         Ok(config_dir)
     }
 
-    pub fn list_configs() -> Result<Vec<String>, LibError> {
-        let config_dir = ConfigFile::config_dir()?;
+    pub fn list_configs(config_base_path: &ConfigBasePath) -> Result<Vec<ConfigFile>, LibError> {
+        let config_dir = config_base_path.path.clone();
 
         if config_dir.is_dir() {
-            let mut result = Vec::<String>::new();
+            let mut result = Vec::new();
             let dirs = fs::read_dir(config_dir)?;
             for entry in dirs {
                 let entry = entry?;
                 let path = entry.path();
                 if path.is_file() {
                     let file_name = path.file_name().ok_or(LibError::FilenameError)?.to_str().ok_or(LibError::FilenameError)?;
-                    result.push(file_name.to_string());
+                    if let Ok(config_file) = ConfigFile::read_config(file_name, config_base_path) {
+                        result.push(config_file);
+                    }
                 }
             }
             return Ok(result);
@@ -94,8 +106,8 @@ impl ConfigFile {
         Err(LibError::ConfigsDirectoryNotADirectory(config_dir))
     }
 
-    pub fn read_config(name: &str) -> Result<ConfigFile, LibError> {
-        let config_dir = ConfigFile::config_file(name)?;
+    pub fn read_config(name: &str, config_base_path: &ConfigBasePath) -> Result<ConfigFile, LibError> {
+        let config_dir = ConfigFile::config_file(name, config_base_path)?;
 
         let config_file = File::open(config_dir.as_path())?;
         let config_file_reader = BufReader::new(config_file);
@@ -103,8 +115,8 @@ impl ConfigFile {
         Ok(config)
     }
 
-    pub fn save_config(&self) -> Result<(), LibError> {
-        let mut config_dir = ConfigFile::config_dir()?;
+    pub fn save_config(&self, config_base_path: &ConfigBasePath) -> Result<(), LibError> {
+        let mut config_dir = config_base_path.path.clone();
 
         create_dir_all(config_dir.as_path())?;
         if cfg!(unix) {
