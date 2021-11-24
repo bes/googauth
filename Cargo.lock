@@ -259,7 +259,7 @@ dependencies = [
 
 [[package]]
 name = "googauth"
-version = "0.8.0"
+version = "0.8.1-pre"
 dependencies = [
  "clap",
  "googauth-lib",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "googauth-lib"
-version = "0.8.0"
+version = "0.8.1-pre"
 dependencies = [
  "clap",
  "dirs",
