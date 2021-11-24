@@ -1,13 +1,13 @@
 use crate::config_file::{ConfigBasePath, ConfigFile, Token};
 use crate::errors::LibError;
 use openidconnect::core::{CoreClient, CoreIdTokenVerifier, CoreProviderMetadata};
-use openidconnect::reqwest::http_client;
+use openidconnect::reqwest::async_http_client;
 use openidconnect::{
     ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken, Scope, TokenResponse,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub fn refresh_google_login(
+pub async fn refresh_google_login(
     config: &mut ConfigFile,
     config_base_path: &ConfigBasePath,
 ) -> Result<(), LibError> {
@@ -17,7 +17,8 @@ pub fn refresh_google_login(
         IssuerUrl::new("https://accounts.google.com".to_string()).expect("Invalid issuer URL");
 
     // Fetch Google's OpenID Connect discovery document.
-    let provider_metadata = CoreProviderMetadata::discover(&issuer_url, http_client)
+    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, async_http_client)
+        .await
         .map_err(|_| LibError::OpenIdError("Failed to discover OpenID Provider".to_string()))?;
 
     let refresh_token = match &config.refresh_token {
@@ -44,7 +45,7 @@ pub fn refresh_google_login(
         refresh_token_request = refresh_token_request.add_scope(Scope::new(scope.to_string()));
     }
 
-    let refresh_token_result = refresh_token_request.request(http_client);
+    let refresh_token_result = refresh_token_request.request_async(async_http_client).await;
 
     let token_response = match refresh_token_result {
         Ok(rt) => rt,

@@ -8,14 +8,14 @@ use openidconnect::core::{
     CoreAuthPrompt, CoreClient, CoreIdTokenClaims, CoreIdTokenVerifier, CoreProviderMetadata,
     CoreResponseType,
 };
-use openidconnect::reqwest::http_client;
+use openidconnect::reqwest::async_http_client;
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
     OAuth2TokenResponse, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse,
 };
 use url::Url;
 
-pub fn google_login(
+pub async fn google_login(
     config: &mut ConfigFile,
     config_base_path: &ConfigBasePath,
 ) -> Result<(), LibError> {
@@ -25,7 +25,8 @@ pub fn google_login(
     let redirect_url = Url::parse(&config.redirect_url)?;
 
     // Fetch Google's OpenID Connect discovery document.
-    let provider_metadata = CoreProviderMetadata::discover(&issuer_url, http_client)
+    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, async_http_client)
+        .await
         .map_err(|_| LibError::OpenIdError("Failed to discover OpenID Provider".to_string()))?;
 
     let client = CoreClient::from_provider_metadata(
@@ -124,7 +125,8 @@ pub fn google_login(
             let token_response = client
                 .exchange_code(code)
                 .set_pkce_verifier(pkce_verifier)
-                .request(http_client)
+                .request_async(async_http_client)
+                .await
                 .map_err(|e| {
                     eprintln!("{:?}", e);
                     LibError::OpenIdError("Failed to access token endpoint".to_string())

@@ -8,7 +8,8 @@ use googauth_lib::{
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let config_name_arg = Arg::with_name("config")
         .value_name("CONFIG NAME")
         .required(true)
@@ -200,7 +201,7 @@ fn main() {
                 }
             };
 
-            match google_login(&mut config, &config_base_path) {
+            match google_login(&mut config, &config_base_path).await {
                 Ok(_) => (),
                 Err(e) => {
                     print_error_and_exit(&e.to_string());
@@ -216,7 +217,7 @@ fn main() {
         ("accesstoken", Some(matches)) => {
             let config_name = matches.value_of("config").unwrap().to_string();
             let access_token =
-                match get_access_token_from_config(&config_name, &config_base_path) {
+                match get_access_token_from_config(&config_name, &config_base_path).await {
                     Ok(access_token) => access_token,
                     Err(e) => {
                         print_error_and_exit(&e.to_string());
@@ -237,7 +238,7 @@ fn main() {
                 }
             };
 
-            if let Err(err) = check_token(config.id_token.clone(), &mut config, &config_base_path) {
+            if let Err(err) = check_token(config.id_token.clone(), &mut config, &config_base_path).await {
                 eprintln!("Error when checking the token: {:?}", err);
                 exit(1);
             }

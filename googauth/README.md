@@ -19,9 +19,6 @@ Using the help section of the program should get you started.
 ./googauth help
 ```
 
-Every required command parameter can be provided using a long form `./googauth --long "mylong"`,
-a short form `./googauth -s "myshort"`, as well as an environment variable `ENV="myenv" ./googauth [...]`.
-
 ## Login
 
 Use the login command with a profile name and parameter values for all the required parameters.
