@@ -34,7 +34,14 @@ pub async fn google_login(
         google_client_id,
         Some(google_client_secret),
     )
-    .set_redirect_uri(RedirectUrl::new(redirect_url.to_string())?);
+        .set_redirect_uri(RedirectUrl::new(redirect_url.to_string())?);
+
+    let port = match redirect_url.port() {
+        Some(port) => port,
+        None => {
+            return Err(LibError::NoRedirectPortError);
+        }
+    };
 
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -72,100 +79,98 @@ pub async fn google_login(
         .as_secs();
 
     // A very naive implementation of the redirect server.
-    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    for stream in listener.incoming() {
-        if let Ok(mut stream) = stream {
-            let code;
-            let state;
-            {
-                let mut reader = BufReader::new(&stream);
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    if let Some(mut stream) = listener.incoming().flatten().next() {
+        let code;
+        let state;
+        {
+            let mut reader = BufReader::new(&stream);
 
-                let mut request_line = String::new();
-                reader.read_line(&mut request_line).unwrap();
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
 
-                let redirect_url = request_line.split_whitespace().nth(1).unwrap();
-                let url = Url::parse(&("http://localhost".to_string() + redirect_url)).unwrap();
+            let redirect_url = request_line.split_whitespace().nth(1).unwrap();
+            let url = Url::parse(&("http://localhost".to_string() + redirect_url)).unwrap();
 
-                let code_pair = url
-                    .query_pairs()
-                    .find(|pair| {
-                        let &(ref key, _) = pair;
-                        key == "code"
-                    })
-                    .unwrap();
+            let code_pair = url
+                .query_pairs()
+                .find(|pair| {
+                    let &(ref key, _) = pair;
+                    key == "code"
+                })
+                .unwrap();
 
-                let (_, value) = code_pair;
-                code = AuthorizationCode::new(value.into_owned());
+            let (_, value) = code_pair;
+            code = AuthorizationCode::new(value.into_owned());
 
-                let state_pair = url
-                    .query_pairs()
-                    .find(|pair| {
-                        let &(ref key, _) = pair;
-                        key == "state"
-                    })
-                    .unwrap();
+            let state_pair = url
+                .query_pairs()
+                .find(|pair| {
+                    let &(ref key, _) = pair;
+                    key == "state"
+                })
+                .unwrap();
 
-                let (_, value) = state_pair;
-                state = CsrfToken::new(value.into_owned());
-            }
-
-            let message = "Go back to your terminal :)";
-            let response = format!(
-                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{}",
-                message.len(),
-                message
-            );
-            stream.write_all(response.as_bytes()).unwrap();
-
-            if state.secret() != csrf_state.secret() {
-                return Err(LibError::TokenCsrfError);
-            }
-
-            // Exchange the code with a token.
-            let token_response = client
-                .exchange_code(code)
-                .set_pkce_verifier(pkce_verifier)
-                .request_async(async_http_client)
-                .await
-                .map_err(|e| {
-                    eprintln!("{:?}", e);
-                    LibError::OpenIdError("Failed to access token endpoint".to_string())
-                })?;
-
-            let access_token_expires = match token_response.expires_in() {
-                None => 0,
-                Some(expires_in) => now + expires_in.as_secs(),
-            };
-
-            let id_token_verifier: CoreIdTokenVerifier = client.id_token_verifier();
-            let id_token_claims: &CoreIdTokenClaims = token_response
-                .extra_fields()
-                .id_token()
-                .ok_or(LibError::NoIdToken)?
-                .claims(&id_token_verifier, &nonce)
-                .map_err(|_| LibError::OpenIdError("Failed to verify ID token".to_string()))?;
-
-            let id_token = token_response
-                .id_token()
-                .ok_or(LibError::NoIdToken)?
-                .to_string();
-            let refresh_token = token_response
-                .refresh_token()
-                .ok_or(LibError::NoRefreshToken)?;
-            let access_token = token_response.access_token().secret().to_string();
-
-            let scopes = token_response.scopes().ok_or(LibError::NoScopes)?;
-
-            config.scopes = scopes.iter().map(|scope| scope.to_string()).collect();
-            config.refresh_token = Some(refresh_token.secret().to_string());
-            config.id_token = Some(Token::new(
-                id_token,
-                id_token_claims.expiration().timestamp() as u64,
-            ));
-            config.access_token = Some(Token::new(access_token, access_token_expires));
-
-            return config.save_config(config_base_path);
+            let (_, value) = state_pair;
+            state = CsrfToken::new(value.into_owned());
         }
+
+        let message = "Go back to your terminal :)";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{}",
+            message.len(),
+            message
+        );
+        stream.write_all(response.as_bytes()).unwrap();
+
+        if state.secret() != csrf_state.secret() {
+            return Err(LibError::TokenCsrfError);
+        }
+
+        // Exchange the code with a token.
+        let token_response = client
+            .exchange_code(code)
+            .set_pkce_verifier(pkce_verifier)
+            .request_async(async_http_client)
+            .await
+            .map_err(|e| {
+                eprintln!("{:?}", e);
+                LibError::OpenIdError("Failed to access token endpoint".to_string())
+            })?;
+
+        let access_token_expires = match token_response.expires_in() {
+            None => 0,
+            Some(expires_in) => now + expires_in.as_secs(),
+        };
+
+        let id_token_verifier: CoreIdTokenVerifier = client.id_token_verifier();
+        let id_token_claims: &CoreIdTokenClaims = token_response
+            .extra_fields()
+            .id_token()
+            .ok_or(LibError::NoIdToken)?
+            .claims(&id_token_verifier, &nonce)
+            .map_err(|_| LibError::OpenIdError("Failed to verify ID token".to_string()))?;
+
+        let id_token = token_response
+            .id_token()
+            .ok_or(LibError::NoIdToken)?
+            .to_string();
+        let refresh_token = token_response
+            .refresh_token()
+            .ok_or(LibError::NoRefreshToken)?;
+        let access_token = token_response.access_token().secret().to_string();
+
+        let scopes = token_response.scopes().ok_or(LibError::NoScopes)?;
+
+        config.scopes = scopes.iter().map(|scope| scope.to_string()).collect();
+        config.refresh_token = Some(refresh_token.secret().to_string());
+        config.id_token = Some(Token::new(
+            id_token,
+            id_token_claims.expiration().timestamp() as u64,
+        ));
+        config.access_token = Some(Token::new(access_token, access_token_expires));
+
+        return config.save_config(config_base_path);
     }
 
     Err(LibError::NoResponse)

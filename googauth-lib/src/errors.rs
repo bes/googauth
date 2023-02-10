@@ -37,4 +37,6 @@ pub enum LibError {
     CouldNotReadConfigCorrupt(String),
     #[error("OpenID error: {0}")]
     OpenIdError(String),
+    #[error("No local port in redirect URL")]
+    NoRedirectPortError,
 }
