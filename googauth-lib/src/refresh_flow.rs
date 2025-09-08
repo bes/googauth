@@ -1,9 +1,9 @@
 use crate::config_file::{ConfigBasePath, ConfigFile, Token};
 use crate::errors::LibError;
 use openidconnect::core::{CoreClient, CoreIdTokenVerifier, CoreProviderMetadata};
-use openidconnect::reqwest::async_http_client;
 use openidconnect::{
-    ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken, Scope, TokenResponse,
+    reqwest, ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken, Scope,
+    TokenResponse,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -15,9 +15,14 @@ pub async fn refresh_google_login(
     let google_client_secret = ClientSecret::new(config.client_secret.to_string());
     let issuer_url =
         IssuerUrl::new("https://accounts.google.com".to_string()).expect("Invalid issuer URL");
+    let http_client = reqwest::ClientBuilder::new()
+        // Following redirects opens the client up to SSRF vulnerabilities.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|openid_error| LibError::OpenIdError(openid_error.to_string()))?;
 
     // Fetch Google's OpenID Connect discovery document.
-    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, async_http_client)
+    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, &http_client)
         .await
         .map_err(|_| LibError::OpenIdError("Failed to discover OpenID Provider".to_string()))?;
 
@@ -39,13 +44,15 @@ pub async fn refresh_google_login(
         .unwrap()
         .as_secs();
 
-    let mut refresh_token_request = client.exchange_refresh_token(&refresh_token);
+    let mut refresh_token_request = client
+        .exchange_refresh_token(&refresh_token)
+        .map_err(|openid_err| LibError::OpenIdError(openid_err.to_string()))?;
 
     for scope in &config.scopes {
         refresh_token_request = refresh_token_request.add_scope(Scope::new(scope.to_string()));
     }
 
-    let refresh_token_result = refresh_token_request.request_async(async_http_client).await;
+    let refresh_token_result = refresh_token_request.request_async(&http_client).await;
 
     let token_response = match refresh_token_result {
         Ok(rt) => rt,

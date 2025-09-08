@@ -8,10 +8,9 @@ use openidconnect::core::{
     CoreAuthPrompt, CoreClient, CoreIdTokenClaims, CoreIdTokenVerifier, CoreProviderMetadata,
     CoreResponseType,
 };
-use openidconnect::reqwest::async_http_client;
 use openidconnect::{
-    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-    OAuth2TokenResponse, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse,
+    reqwest, AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl,
+    Nonce, OAuth2TokenResponse, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse,
 };
 use url::Url;
 
@@ -23,9 +22,14 @@ pub async fn google_login(
     let google_client_secret = ClientSecret::new(config.client_secret.to_string());
     let issuer_url = IssuerUrl::new("https://accounts.google.com".to_string())?;
     let redirect_url = Url::parse(&config.redirect_url)?;
+    let http_client = reqwest::ClientBuilder::new()
+        // Following redirects opens the client up to SSRF vulnerabilities.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|openid_error| LibError::OpenIdError(openid_error.to_string()))?;
 
     // Fetch Google's OpenID Connect discovery document.
-    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, async_http_client)
+    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, &http_client)
         .await
         .map_err(|_| LibError::OpenIdError("Failed to discover OpenID Provider".to_string()))?;
 
@@ -34,7 +38,7 @@ pub async fn google_login(
         google_client_id,
         Some(google_client_secret),
     )
-        .set_redirect_uri(RedirectUrl::new(redirect_url.to_string())?);
+    .set_redirect_uri(RedirectUrl::new(redirect_url.to_string())?);
 
     let port = match redirect_url.port() {
         Some(port) => port,
@@ -130,8 +134,9 @@ pub async fn google_login(
         // Exchange the code with a token.
         let token_response = client
             .exchange_code(code)
+            .map_err(|openid_err| LibError::OpenIdError(openid_err.to_string()))?
             .set_pkce_verifier(pkce_verifier)
-            .request_async(async_http_client)
+            .request_async(&http_client)
             .await
             .map_err(|e| {
                 eprintln!("{:?}", e);
