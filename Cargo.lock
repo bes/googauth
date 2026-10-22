@@ -586,12 +586,11 @@ dependencies = [
 name = "googauth-lib"
 version = "0.9.0"
 dependencies = [
- "clap",
  "dirs",
  "openidconnect",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.16",
  "url",
  "webbrowser",
 ]
