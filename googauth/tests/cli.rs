@@ -103,21 +103,46 @@ fn login_help_lists_options_and_env_vars() {
 }
 
 #[test]
-fn no_subcommand_prints_hint() {
-    let home = temp_home("no_subcommand_prints_hint");
-    let (output, stdout, _) = run(&mut googauth(&home));
+fn no_subcommand_prints_help_and_fails() {
+    let home = temp_home("no_subcommand_prints_help_and_fails");
+    let (output, stdout, stderr) = run(&mut googauth(&home));
 
-    assert!(output.status.success());
-    assert_eq!(stdout, "You must select a sub command. See --help\n");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("Usage:"), "{}", stderr);
 }
 
 #[test]
 fn list_without_configs() {
     let home = temp_home("list_without_configs");
-    let (output, stdout, _) = run(googauth(&home).arg("list"));
+    let (output, stdout, stderr) = run(googauth(&home).arg("list"));
 
     assert!(output.status.success());
-    assert_eq!(stdout, "No configs available\n");
+    assert_eq!(stdout, "");
+    assert_eq!(stderr, "No configs available\n");
+
+    fs::create_dir(home.join(".googauth")).unwrap();
+    let (output, stdout, stderr) = run(googauth(&home).arg("list"));
+
+    assert!(output.status.success());
+    assert_eq!(stdout, "");
+    assert_eq!(stderr, "No configs available\n");
+}
+
+#[test]
+fn list_fails_when_configs_path_is_a_file() {
+    let home = temp_home("list_fails_when_configs_path_is_a_file");
+    fs::write(home.join(".googauth"), "").unwrap();
+
+    let (output, stdout, stderr) = run(googauth(&home).arg("list"));
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.starts_with("Error: Configs directory "),
+        "{}",
+        stderr
+    );
 }
 
 #[test]
@@ -162,17 +187,39 @@ fn idtoken_prints_unexpired_token() {
     assert_eq!(stdout, "work-id-token\n");
 }
 
+/// Runs both token subcommands, which should fail the same way, and returns their error output.
+fn token_errors(home: &Path, config_name: &str) -> String {
+    let errors: Vec<_> = ["accesstoken", "idtoken"]
+        .into_iter()
+        .map(|subcommand| {
+            let (output, stdout, stderr) = run(googauth(home).args([subcommand, config_name]));
+
+            assert_eq!(output.status.code(), Some(1), "{}", subcommand);
+            assert_eq!(stdout, "", "{}", subcommand);
+            stderr
+        })
+        .collect();
+
+    assert_eq!(errors[0], errors[1]);
+    errors[0].clone()
+}
+
 #[test]
 fn tokens_for_unknown_config_fail() {
     let home = temp_home("tokens_for_unknown_config_fail");
 
-    for subcommand in ["accesstoken", "idtoken"] {
-        let (output, stdout, stderr) = run(googauth(&home).args([subcommand, "missing"]));
+    let stderr = token_errors(&home, "missing");
+    assert!(stderr.starts_with("Error: I/O error: "), "{}", stderr);
+}
 
-        assert_eq!(output.status.code(), Some(1), "{}", subcommand);
-        assert_eq!(stdout, "", "{}", subcommand);
-        assert!(stderr.starts_with("Error"), "{}: {}", subcommand, stderr);
-    }
+#[test]
+fn tokens_for_corrupt_config_fail() {
+    let home = temp_home("tokens_for_corrupt_config_fail");
+    fs::create_dir(home.join(".googauth")).unwrap();
+    fs::write(home.join(".googauth/corrupt"), "not json").unwrap();
+
+    let stderr = token_errors(&home, "corrupt");
+    assert!(stderr.starts_with("Error: JSON error: "), "{}", stderr);
 }
 
 #[test]
@@ -216,7 +263,8 @@ fn login_saves_config_from_arguments() {
     ]));
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stdout.starts_with("Saved configuration to "), "{}", stdout);
+    assert_eq!(stdout, "");
+    assert!(stderr.starts_with("Saved configuration to "), "{}", stderr);
     assert!(stderr.contains("URL parse error"), "{}", stderr);
 
     let config = ConfigFile::read_config("work", &config_base_path(&home)).unwrap();
@@ -243,7 +291,7 @@ fn login_saves_config_from_arguments() {
 #[test]
 fn login_reads_options_from_env_vars() {
     let home = temp_home("login_reads_options_from_env_vars");
-    let (output, _, stderr) = run(googauth(&home)
+    let (output, stdout, stderr) = run(googauth(&home)
         .args(["login", "work"])
         .env("CLIENT_ID", "env-id")
         .env("CLIENT_SECRET", "env-secret")
@@ -251,6 +299,7 @@ fn login_reads_options_from_env_vars() {
         .env("REDIRECT", "not-a-url"));
 
     assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout, "");
     assert!(stderr.contains("URL parse error"), "{}", stderr);
 
     let config = ConfigFile::read_config("work", &config_base_path(&home)).unwrap();

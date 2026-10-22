@@ -70,12 +70,12 @@ pub async fn google_login<C: for<'c> AsyncHttpClient<'c>>(
 
     webbrowser::open(&authorize_url_string)?;
 
-    println!(
+    eprintln!(
         "If the web browser did not open automatically, you can open this URL in your browser:\n{}\n",
         authorize_url_string
     );
 
-    println!("Waiting for the browser to sign you in...");
+    eprintln!("Waiting for the browser to sign you in...");
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

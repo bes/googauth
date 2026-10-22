@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, Command};
 use googauth_lib::{
-    ConfigBasePath, ConfigFile, HttpClientError, HttpRequest, HttpResponse, check_token,
+    ConfigBasePath, ConfigFile, HttpClientError, HttpRequest, HttpResponse, LibError, check_token,
     get_access_token_from_config, google_login, http,
 };
 use std::process::exit;
@@ -20,6 +20,8 @@ async fn main() {
         .version(VERSION)
         .propagate_version(true)
         .about("Request and store Google OpenID (OAuth) tokens")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
         .subcommand(Command::new("list")
             .about("List all the current profiles")
         )
@@ -77,8 +79,8 @@ async fn main() {
     let config_base_path = match ConfigBasePath::from_home_dir() {
         Ok(googauth_config_base_path) => googauth_config_base_path,
         Err(err) => {
-            println!("No base path found: {:?}", err);
-            exit(0);
+            print_error_and_exit(&err.to_string());
+            unreachable!()
         }
     };
 
@@ -99,12 +101,16 @@ async fn main() {
         Some(("list", _)) => {
             let config_list = match ConfigFile::list_configs(&config_base_path) {
                 Ok(config_list) => config_list,
+                // The configs directory is created by the first login
+                Err(LibError::ConfigsDirectoryNotADirectory(path)) if !path.exists() => Vec::new(),
                 Err(err) => {
-                    eprintln!("Error: {:?}", err);
-                    print_success_and_exit("No configs available");
+                    print_error_and_exit(&err.to_string());
                     unreachable!()
                 }
             };
+            if config_list.is_empty() {
+                eprintln!("No configs available");
+            }
             for config_file in config_list {
                 println!(
                     "{0: <25} | {1: <115}",
@@ -182,7 +188,7 @@ async fn main() {
 
                     if let Ok(config) = ConfigFile::config_file(config_name, &config_base_path) {
                         if let Some(config_str) = config.to_str() {
-                            println!("Saved configuration to {}", config_str)
+                            eprintln!("Saved configuration to {}", config_str)
                         }
                     }
 
@@ -214,7 +220,7 @@ async fn main() {
                 }
             }
 
-            println!(
+            eprintln!(
                 "Successfully logged in and created the configuration profile {}",
                 config.name
             );
@@ -239,8 +245,8 @@ async fn main() {
             let mut config = match ConfigFile::read_config(&config_name, &config_base_path) {
                 Ok(config) => config,
                 Err(err) => {
-                    eprintln!("Error when reading configuration: {:?}", err);
-                    exit(1);
+                    print_error_and_exit(&err.to_string());
+                    unreachable!()
                 }
             };
 
@@ -252,8 +258,8 @@ async fn main() {
             )
             .await
             {
-                eprintln!("Error when checking the token: {:?}", err);
-                exit(1);
+                print_error_and_exit(&err.to_string());
+                unreachable!()
             }
 
             match &config.id_token {
@@ -267,9 +273,7 @@ async fn main() {
                 }
             };
         }
-        _ => {
-            println!("You must select a sub command. See --help");
-        }
+        _ => unreachable!("clap requires a subcommand"),
     }
 }
 
@@ -296,9 +300,4 @@ async fn send_request(
 fn print_error_and_exit(error_str: &str) {
     eprintln!("Error: {}", error_str);
     exit(1);
-}
-
-fn print_success_and_exit(success_str: &str) {
-    println!("{}", success_str);
-    exit(0);
 }

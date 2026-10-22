@@ -9,13 +9,13 @@ pub enum LibError {
     HomeDirectoryNotFound,
     #[error("Configs directory {0} is not a directory")]
     ConfigsDirectoryNotADirectory(PathBuf),
-    #[error("Error: {0}")]
+    #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Filename error")]
     FilenameError,
-    #[error("JSON error {0:?}")]
+    #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
-    #[error("URL parse error {0:?}")]
+    #[error("URL parse error: {0}")]
     UrlError(#[from] url::ParseError),
     #[error(
         "The state sent to the server, and the state received from the server do not match - this may be a sign of a CSRF attack"

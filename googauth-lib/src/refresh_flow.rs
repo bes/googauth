@@ -71,7 +71,7 @@ pub async fn refresh_google_login<C: for<'c> AsyncHttpClient<'c>>(
     let id_token_claims = match id_token.claims(&id_token_verifier, |_: Option<&_>| Ok(())) {
         Ok(claims) => claims,
         Err(e) => {
-            println!("ERR {:?}", e);
+            eprintln!("{:?}", e);
             return Err(LibError::CouldNotReadClaims);
         }
     };
