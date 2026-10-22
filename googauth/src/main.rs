@@ -75,7 +75,7 @@ async fn main() {
             .arg(config_name_arg.clone())
         );
 
-    let config_base_path = match ConfigBasePath::default() {
+    let config_base_path = match ConfigBasePath::from_home_dir() {
         Ok(googauth_config_base_path) => googauth_config_base_path,
         Err(err) => {
             println!("No base path found: {:?}", err);
@@ -111,7 +111,7 @@ async fn main() {
                     unreachable!()
                 }
             };
-            let mut config = match ConfigFile::read_config(&config_name, &config_base_path)
+            let mut config = match ConfigFile::read_config(config_name, &config_base_path)
             {
                 Err(_err) => {
                     // TODO: Check err?
@@ -120,7 +120,7 @@ async fn main() {
                         None => {
                             print_error_and_exit(&format!(
                                 "You must specify a client id for the configuration {}",
-                                &config_name
+                                config_name
                             ));
                             unreachable!()
                         }
@@ -130,7 +130,7 @@ async fn main() {
                         None => {
                             print_error_and_exit(&format!(
                                 "You must specify a client secret for the configuration {}",
-                                &config_name
+                                config_name
                             ));
                             unreachable!()
                         }
@@ -140,7 +140,7 @@ async fn main() {
                         None => {
                             print_error_and_exit(&format!(
                                 "You must specify at least one scope for the configuration {}",
-                                &config_name
+                                config_name
                             ));
                             unreachable!()
                         }
@@ -150,13 +150,13 @@ async fn main() {
                         None => {
                             print_error_and_exit(&format!(
                                 "You must specify a redirect URL for the configuration {}",
-                                &config_name
+                                config_name
                             ));
                             unreachable!()
                         }
                     };
                     let new_config = ConfigFile::new(
-                        &config_name,
+                        config_name,
                         client_id,
                         client_secret,
                         &scopes,
@@ -172,7 +172,7 @@ async fn main() {
                     }
 
                     if let Ok(config) =
-                        ConfigFile::config_file(&config_name, &config_base_path)
+                        ConfigFile::config_file(config_name, &config_base_path)
                     {
                         if let Some(config_str) = config.to_str() {
                             println!("Saved configuration to {}", config_str)
@@ -209,7 +209,7 @@ async fn main() {
 
             println!(
                 "Successfully logged in and created the configuration profile {}",
-                &config.name
+                config.name
             );
         }
         Some(("accesstoken", matches)) => {
@@ -246,7 +246,7 @@ async fn main() {
                 None => {
                     print_error_and_exit(&format!(
                         "Could not read id token from {}. Is the configuration corrupt?",
-                        &config.name
+                        config.name
                     ));
                     unreachable!()
                 }

@@ -6,6 +6,17 @@ members = [
     "googauth-lib",
 ]
 
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+too_many_arguments = "allow"
+new_without_default = "allow"
+needless_lifetimes = "allow"
+question_mark = "allow"
+let_and_return = "allow"
+neg_multiply = "allow"
+collapsible_if = "allow"
+collapsible_match = "allow"
+
 [profile.release]
 lto = true
 codegen-units = 1

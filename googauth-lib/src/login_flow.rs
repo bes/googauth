@@ -72,7 +72,7 @@ pub async fn google_login(
 
     println!(
         "If the web browser did not open automatically, you can open this URL in your browser:\n{}\n",
-        &authorize_url_string
+        authorize_url_string
     );
 
     println!("Waiting for the browser to sign you in...");
@@ -99,7 +99,7 @@ pub async fn google_login(
             let code_pair = url
                 .query_pairs()
                 .find(|pair| {
-                    let &(ref key, _) = pair;
+                    let (key, _) = pair;
                     key == "code"
                 })
                 .unwrap();
@@ -110,7 +110,7 @@ pub async fn google_login(
             let state_pair = url
                 .query_pairs()
                 .find(|pair| {
-                    let &(ref key, _) = pair;
+                    let (key, _) = pair;
                     key == "state"
                 })
                 .unwrap();

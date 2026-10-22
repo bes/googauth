@@ -50,7 +50,8 @@ pub struct ConfigBasePath {
 }
 
 impl ConfigBasePath {
-    pub fn default() -> Result<ConfigBasePath, LibError> {
+    /// The config base path in the home directory, `~/.googauth`.
+    pub fn from_home_dir() -> Result<ConfigBasePath, LibError> {
         let mut config_dir = match home_dir() {
             None => {
                 return Err(LibError::HomeDirectoryNotFound);
@@ -123,7 +124,7 @@ impl ConfigFile {
             set_permissions(config_dir.as_path(), Permissions::from_mode(0o700))?
         }
 
-        config_dir.push(self.name.to_string());
+        config_dir.push(&self.name);
 
         let config_file = File::create(config_dir.as_path())?;
 
