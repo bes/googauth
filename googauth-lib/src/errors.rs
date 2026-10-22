@@ -41,4 +41,14 @@ pub enum LibError {
     OpenIdError(String),
     #[error("No local port in redirect URL")]
     NoRedirectPortError,
+    #[error("Could not listen for the browser redirect on port {0}: {1}")]
+    RedirectListenerError(u16, #[source] std::io::Error),
+    #[error("Google did not authorize the sign in: {0}")]
+    AuthorizationError(String),
+    #[error("The browser redirect did not contain an authorization code")]
+    NoAuthorizationCode,
+    #[error(
+        "Invalid configuration name {0:?}. A configuration name must be a file name, not a path"
+    )]
+    InvalidConfigName(String),
 }

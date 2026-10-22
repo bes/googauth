@@ -1,9 +1,10 @@
 use std::fs;
+use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use googauth_lib::{ConfigBasePath, ConfigFile, Token};
+use googauth_lib::{ConfigBasePath, ConfigFile, ConfigName, Token};
 
 /// Creates an empty HOME directory for a test, so that the real ~/.googauth is never touched.
 fn temp_home(test_name: &str) -> PathBuf {
@@ -18,6 +19,9 @@ fn config_base_path(home: &Path) -> ConfigBasePath {
 }
 
 /// Runs googauth with the given HOME, ignoring any googauth environment variables set by the caller.
+///
+/// HTTPS requests are sent to a proxy on a closed port, so that `login` fails when it tries to
+/// discover Google's OpenID configuration, before it opens a browser or waits for a sign in.
 fn googauth(home: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_googauth"));
     command
@@ -25,7 +29,11 @@ fn googauth(home: &Path) -> Command {
         .env_remove("CLIENT_ID")
         .env_remove("CLIENT_SECRET")
         .env_remove("SCOPES")
-        .env_remove("REDIRECT");
+        .env_remove("REDIRECT")
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("https_proxy", "http://127.0.0.1:9")
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy");
     command
 }
 
@@ -39,7 +47,7 @@ fn run(command: &mut Command) -> (Output, String, String) {
 /// Saves a config with tokens that never expire, so reading them does not require a refresh.
 fn save_signed_in_config(home: &Path, name: &str) {
     let mut config = ConfigFile::new(
-        name,
+        &name.parse::<ConfigName>().unwrap(),
         "client-id",
         "client-secret",
         &["openid".to_string(), "email".to_string()],
@@ -166,6 +174,26 @@ fn list_shows_saved_configs() {
 }
 
 #[test]
+fn list_names_copied_configs_after_their_files() {
+    let home = temp_home("list_names_copied_configs_after_their_files");
+    save_signed_in_config(&home, "work");
+    fs::copy(
+        home.join(".googauth/work"),
+        home.join(".googauth/work-copy"),
+    )
+    .unwrap();
+
+    let (output, stdout, _) = run(googauth(&home).arg("list"));
+
+    assert!(output.status.success());
+    let lines: Vec<_> = stdout.lines().map(str::trim_end).collect();
+    for name in ["work", "work-copy"] {
+        let row = format!("{name: <25} | openid, email");
+        assert!(lines.contains(&row.as_str()), "missing {row}:\n{stdout}");
+    }
+}
+
+#[test]
 fn accesstoken_prints_unexpired_token() {
     let home = temp_home("accesstoken_prints_unexpired_token");
     save_signed_in_config(&home, "work");
@@ -239,6 +267,51 @@ fn config_name_is_required() {
     }
 }
 
+#[test]
+fn config_name_must_be_a_file_name() {
+    let home = temp_home("config_name_must_be_a_file_name");
+    let absolute = home.join("escape");
+    let absolute = absolute.to_str().unwrap();
+
+    for name in [
+        "",
+        ".",
+        "..",
+        "../escape",
+        absolute,
+        "nested/name",
+        "trailing/",
+    ] {
+        for args in [
+            // The invalid redirect URL stops login before it opens a browser, if a name is accepted
+            vec![
+                "login",
+                name,
+                "-i",
+                "my-id",
+                "-s",
+                "my-secret",
+                "-o",
+                "openid",
+                "-r",
+                "not-a-url",
+            ],
+            vec!["accesstoken", name],
+            vec!["idtoken", name],
+        ] {
+            let (output, _, stderr) = run(googauth(&home).args(&args));
+
+            assert_eq!(output.status.code(), Some(2), "{args:?}");
+            assert!(
+                stderr.contains(&format!("invalid value '{name}' for '<CONFIG NAME>'")),
+                "{args:?}: {stderr}"
+            );
+        }
+    }
+    assert!(!home.join(".googauth").exists());
+    assert!(!home.join("escape").exists());
+}
+
 // The login tests use an invalid redirect URL. The new config is saved before the login flow
 // starts, and the login flow fails on the redirect URL before contacting Google or opening a
 // browser, so the saved config can be checked without signing in.
@@ -267,8 +340,9 @@ fn login_saves_config_from_arguments() {
     assert!(stderr.starts_with("Saved configuration to "), "{}", stderr);
     assert!(stderr.contains("URL parse error"), "{}", stderr);
 
-    let config = ConfigFile::read_config("work", &config_base_path(&home)).unwrap();
-    assert_eq!(config.name, "work");
+    let config =
+        ConfigFile::read_config(&"work".parse().unwrap(), &config_base_path(&home)).unwrap();
+    assert_eq!(config.name.as_str(), "work");
     assert_eq!(config.client_id, "my-id");
     assert_eq!(config.client_secret, "my-secret");
     assert_eq!(
@@ -283,7 +357,8 @@ fn login_saves_config_from_arguments() {
     assert_eq!(config.redirect_url, "not-a-url");
     assert!(config.refresh_token.is_none());
 
-    let config_path = ConfigFile::config_file("work", &config_base_path(&home)).unwrap();
+    let config_path =
+        ConfigFile::config_file(&"work".parse().unwrap(), &config_base_path(&home)).unwrap();
     let mode = fs::metadata(config_path).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600, "the config file holds secrets");
 }
@@ -302,7 +377,8 @@ fn login_reads_options_from_env_vars() {
     assert_eq!(stdout, "");
     assert!(stderr.contains("URL parse error"), "{}", stderr);
 
-    let config = ConfigFile::read_config("work", &config_base_path(&home)).unwrap();
+    let config =
+        ConfigFile::read_config(&"work".parse().unwrap(), &config_base_path(&home)).unwrap();
     assert_eq!(config.client_id, "env-id");
     assert_eq!(config.client_secret, "env-secret");
     assert_eq!(config.scopes, ["openid", "email"]);
@@ -355,4 +431,64 @@ fn login_rejects_empty_scope() {
         stderr
     );
     assert!(!home.join(".googauth").exists());
+}
+
+#[test]
+fn login_fails_when_the_redirect_port_is_busy() {
+    let home = temp_home("login_fails_when_the_redirect_port_is_busy");
+    let busy = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = busy.local_addr().unwrap().port();
+    let redirect = format!("http://localhost:{port}/");
+
+    let (output, stdout, stderr) = run(googauth(&home).args([
+        "login",
+        "work",
+        "-i",
+        "my-id",
+        "-s",
+        "my-secret",
+        "-o",
+        "openid",
+        "-r",
+        redirect.as_str(),
+    ]));
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout, "");
+    let error = format!("Error: Could not listen for the browser redirect on port {port}: ");
+    assert!(
+        stderr.lines().last().unwrap().starts_with(&error),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("open this URL"), "{stderr}");
+}
+
+#[test]
+fn login_fails_before_opening_a_browser_when_google_is_unreachable() {
+    let home = temp_home("login_fails_before_opening_a_browser_when_google_is_unreachable");
+    let free = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = free.local_addr().unwrap().port();
+    drop(free);
+    let redirect = format!("http://localhost:{port}/");
+
+    let (output, stdout, stderr) = run(googauth(&home).args([
+        "login",
+        "work",
+        "-i",
+        "my-id",
+        "-s",
+        "my-secret",
+        "-o",
+        "openid",
+        "-r",
+        redirect.as_str(),
+    ]));
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.ends_with("Error: OpenID error: Failed to discover OpenID Provider\n"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("open this URL"), "{stderr}");
 }

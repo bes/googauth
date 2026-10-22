@@ -27,7 +27,7 @@ pub async fn refresh_google_login<C: for<'c> AsyncHttpClient<'c>>(
     let refresh_token = match &config.refresh_token {
         Some(refresh_token) => RefreshToken::new(refresh_token.to_string()),
         None => {
-            return Err(LibError::NoRefreshTokenForConfig(config.name.clone()));
+            return Err(LibError::NoRefreshTokenForConfig(config.name.to_string()));
         }
     };
 

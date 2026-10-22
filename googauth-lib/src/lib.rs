@@ -1,11 +1,13 @@
 pub use crate::errors::LibError;
 pub use config_file::*;
+pub use config_name::*;
 pub use login_flow::google_login;
 pub use openidconnect::{AsyncHttpClient, HttpClientError, HttpRequest, HttpResponse, http};
 pub use refresh_flow::refresh_google_login;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod config_file;
+mod config_name;
 mod errors;
 mod login_flow;
 mod refresh_flow;
@@ -15,7 +17,7 @@ mod refresh_flow;
 ///
 /// See [refresh_google_login] for the requirements on `http_client`.
 pub async fn get_access_token_from_config<C: for<'c> AsyncHttpClient<'c>>(
-    config_name: &str,
+    config_name: &ConfigName,
     config_base_path: &ConfigBasePath,
     http_client: &C,
 ) -> Result<Token, LibError> {
@@ -31,7 +33,7 @@ pub async fn get_access_token_from_config<C: for<'c> AsyncHttpClient<'c>>(
 
     match &config.access_token {
         Some(access_token) => Ok(access_token.clone()),
-        None => Err(LibError::CouldNotReadConfigCorrupt(config.name)),
+        None => Err(LibError::CouldNotReadConfigCorrupt(config.name.into())),
     }
 }
 

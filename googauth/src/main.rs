@@ -1,9 +1,10 @@
 use clap::{Arg, ArgAction, Command};
 use googauth_lib::{
-    ConfigBasePath, ConfigFile, HttpClientError, HttpRequest, HttpResponse, LibError, check_token,
-    get_access_token_from_config, google_login, http,
+    ConfigBasePath, ConfigFile, ConfigName, HttpClientError, HttpRequest, HttpResponse, LibError,
+    check_token, get_access_token_from_config, google_login, http,
 };
 use std::process::exit;
+use std::str::FromStr;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -13,6 +14,7 @@ async fn main() {
         .value_name("CONFIG NAME")
         .required(true)
         .index(1)
+        .value_parser(ConfigName::from_str)
         .help("The configuration name")
         .long_help("The configuration will cache the refresh token and other values to avoid reauthorization on reuse");
 
@@ -120,7 +122,7 @@ async fn main() {
             }
         }
         Some(("login", matches)) => {
-            let config_name = match matches.get_one::<String>("config") {
+            let config_name = match matches.get_one::<ConfigName>("config") {
                 Some(config_name) => config_name,
                 None => {
                     print_error_and_exit("You must specify an configuration name");
@@ -226,7 +228,7 @@ async fn main() {
             );
         }
         Some(("accesstoken", matches)) => {
-            let config_name = matches.get_one::<String>("config").unwrap().clone();
+            let config_name = matches.get_one::<ConfigName>("config").unwrap().clone();
             let access_token =
                 match get_access_token_from_config(&config_name, &config_base_path, &http_client)
                     .await
@@ -240,7 +242,7 @@ async fn main() {
             println!("{}", access_token.secret);
         }
         Some(("idtoken", matches)) => {
-            let config_name = matches.get_one::<String>("config").unwrap().clone();
+            let config_name = matches.get_one::<ConfigName>("config").unwrap().clone();
 
             let mut config = match ConfigFile::read_config(&config_name, &config_base_path) {
                 Ok(config) => config,

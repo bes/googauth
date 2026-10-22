@@ -1,3 +1,4 @@
+use crate::config_name::ConfigName;
 use crate::errors::LibError;
 use dirs::home_dir;
 use serde::{Deserialize, Serialize};
@@ -6,6 +7,7 @@ use std::fs::{File, Permissions, create_dir_all, set_permissions};
 use std::io::{BufReader, BufWriter};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 /// A configuration file that saves the information necessary
 /// to fetch tokens and to be able to refresh said tokens when
@@ -13,7 +15,7 @@ use std::path::PathBuf;
 #[derive(Serialize, Deserialize)]
 pub struct ConfigFile {
     pub version: u32,
-    pub name: String,
+    pub name: ConfigName,
     pub client_id: String,
     pub client_secret: String,
     pub scopes: Vec<String>,
@@ -25,7 +27,7 @@ pub struct ConfigFile {
 
 impl ConfigFile {
     pub fn new(
-        name: &str,
+        name: &ConfigName,
         client_id: &str,
         client_secret: &str,
         scopes: &[String],
@@ -33,7 +35,7 @@ impl ConfigFile {
     ) -> ConfigFile {
         ConfigFile {
             version: 1,
-            name: name.to_string(),
+            name: name.clone(),
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
             scopes: scopes.iter().map(|s| s.to_string()).collect(),
@@ -80,9 +82,12 @@ impl Token {
 }
 
 impl ConfigFile {
-    pub fn config_file(name: &str, config_base_path: &ConfigBasePath) -> Result<PathBuf, LibError> {
+    pub fn config_file(
+        name: &ConfigName,
+        config_base_path: &ConfigBasePath,
+    ) -> Result<PathBuf, LibError> {
         let mut config_dir = config_base_path.path.clone();
-        config_dir.push(name);
+        config_dir.push(name.as_str());
         Ok(config_dir)
     }
 
@@ -101,7 +106,9 @@ impl ConfigFile {
                         .ok_or(LibError::FilenameError)?
                         .to_str()
                         .ok_or(LibError::FilenameError)?;
-                    if let Ok(config_file) = ConfigFile::read_config(file_name, config_base_path) {
+                    if let Ok(name) = ConfigName::from_str(file_name)
+                        && let Ok(config_file) = ConfigFile::read_config(&name, config_base_path)
+                    {
                         result.push(config_file);
                     }
                 }
@@ -112,14 +119,15 @@ impl ConfigFile {
     }
 
     pub fn read_config(
-        name: &str,
+        name: &ConfigName,
         config_base_path: &ConfigBasePath,
     ) -> Result<ConfigFile, LibError> {
         let config_dir = ConfigFile::config_file(name, config_base_path)?;
 
         let config_file = File::open(config_dir.as_path())?;
         let config_file_reader = BufReader::new(config_file);
-        let config = serde_json::from_reader(config_file_reader)?;
+        let mut config: ConfigFile = serde_json::from_reader(config_file_reader)?;
+        config.name = name.clone();
         Ok(config)
     }
 
@@ -131,7 +139,7 @@ impl ConfigFile {
             set_permissions(config_dir.as_path(), Permissions::from_mode(0o700))?
         }
 
-        config_dir.push(&self.name);
+        config_dir.push(self.name.as_str());
 
         let config_file = File::create(config_dir.as_path())?;
 
