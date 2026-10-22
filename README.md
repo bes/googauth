@@ -14,7 +14,7 @@ Cargo.toml:
 
 ```toml
 [dependencies]
-googauth-lib = "0.6.0"
+googauth-lib = "0.10.0"
 ```
 
 # How to use the application
