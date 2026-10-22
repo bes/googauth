@@ -1,5 +1,5 @@
-use thiserror::Error;
 use std::path::PathBuf;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum LibError {
@@ -17,7 +17,9 @@ pub enum LibError {
     JsonError(#[from] serde_json::Error),
     #[error("URL parse error {0:?}")]
     UrlError(#[from] url::ParseError),
-    #[error("The state sent to the server, and the state received from the server do not match - this may be a sign of a CSRF attack")]
+    #[error(
+        "The state sent to the server, and the state received from the server do not match - this may be a sign of a CSRF attack"
+    )]
     TokenCsrfError,
     #[error("No ID token present")]
     NoIdToken,

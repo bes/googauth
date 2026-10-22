@@ -1,11 +1,11 @@
+use crate::errors::LibError;
 use dirs::home_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::fs::{create_dir_all, set_permissions, File, Permissions};
+use std::fs::{File, Permissions, create_dir_all, set_permissions};
 use std::io::{BufReader, BufWriter};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use crate::errors::LibError;
 
 /// A configuration file that saves the information necessary
 /// to fetch tokens and to be able to refresh said tokens when
@@ -59,7 +59,7 @@ impl ConfigBasePath {
             Some(dir) => dir,
         };
         config_dir.push(".googauth");
-        Ok(ConfigBasePath { path: config_dir } )
+        Ok(ConfigBasePath { path: config_dir })
     }
 
     pub fn from(path: PathBuf) -> ConfigBasePath {
@@ -96,7 +96,11 @@ impl ConfigFile {
                 let entry = entry?;
                 let path = entry.path();
                 if path.is_file() {
-                    let file_name = path.file_name().ok_or(LibError::FilenameError)?.to_str().ok_or(LibError::FilenameError)?;
+                    let file_name = path
+                        .file_name()
+                        .ok_or(LibError::FilenameError)?
+                        .to_str()
+                        .ok_or(LibError::FilenameError)?;
                     if let Ok(config_file) = ConfigFile::read_config(file_name, config_base_path) {
                         result.push(config_file);
                     }
@@ -107,7 +111,10 @@ impl ConfigFile {
         Err(LibError::ConfigsDirectoryNotADirectory(config_dir))
     }
 
-    pub fn read_config(name: &str, config_base_path: &ConfigBasePath) -> Result<ConfigFile, LibError> {
+    pub fn read_config(
+        name: &str,
+        config_base_path: &ConfigBasePath,
+    ) -> Result<ConfigFile, LibError> {
         let config_dir = ConfigFile::config_file(name, config_base_path)?;
 
         let config_file = File::open(config_dir.as_path())?;

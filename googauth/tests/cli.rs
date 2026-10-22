@@ -66,7 +66,12 @@ fn help_lists_subcommands() {
 
     assert!(output.status.success());
     for subcommand in ["list", "login", "accesstoken", "idtoken"] {
-        assert!(stdout.contains(subcommand), "missing {}:\n{}", subcommand, stdout);
+        assert!(
+            stdout.contains(subcommand),
+            "missing {}:\n{}",
+            subcommand,
+            stdout
+        );
     }
 }
 
@@ -88,7 +93,12 @@ fn login_help_lists_options_and_env_vars() {
         "REDIRECT",
         "http://localhost:8080/",
     ] {
-        assert!(stdout.contains(expected), "missing {}:\n{}", expected, stdout);
+        assert!(
+            stdout.contains(expected),
+            "missing {}:\n{}",
+            expected,
+            stdout
+        );
     }
 }
 
@@ -173,7 +183,12 @@ fn config_name_is_required() {
         let (output, _, stderr) = run(googauth(&home).arg(subcommand));
 
         assert_eq!(output.status.code(), Some(2), "{}", subcommand);
-        assert!(stderr.contains("<CONFIG NAME>"), "{}: {}", subcommand, stderr);
+        assert!(
+            stderr.contains("<CONFIG NAME>"),
+            "{}: {}",
+            subcommand,
+            stderr
+        );
     }
 }
 
@@ -185,8 +200,19 @@ fn config_name_is_required() {
 fn login_saves_config_from_arguments() {
     let home = temp_home("login_saves_config_from_arguments");
     let (output, stdout, stderr) = run(googauth(&home).args([
-        "login", "work", "--id", "my-id", "-s", "my-secret", "--scopes", "openid", "email",
-        "-o", "profile,https://www.googleapis.com/auth/cloud-platform", "-r", "not-a-url",
+        "login",
+        "work",
+        "--id",
+        "my-id",
+        "-s",
+        "my-secret",
+        "--scopes",
+        "openid",
+        "email",
+        "-o",
+        "profile,https://www.googleapis.com/auth/cloud-platform",
+        "-r",
+        "not-a-url",
     ]));
 
     assert_eq!(output.status.code(), Some(1));
@@ -199,7 +225,12 @@ fn login_saves_config_from_arguments() {
     assert_eq!(config.client_secret, "my-secret");
     assert_eq!(
         config.scopes,
-        ["openid", "email", "profile", "https://www.googleapis.com/auth/cloud-platform"]
+        [
+            "openid",
+            "email",
+            "profile",
+            "https://www.googleapis.com/auth/cloud-platform"
+        ]
     );
     assert_eq!(config.redirect_url, "not-a-url");
     assert!(config.refresh_token.is_none());
@@ -243,7 +274,10 @@ fn login_requires_client_id_secret_and_scopes() {
         assert_eq!(output.status.code(), Some(1), "{:?}", args);
         assert_eq!(
             stderr,
-            format!("Error: You must specify {} for the configuration work\n", error),
+            format!(
+                "Error: You must specify {} for the configuration work\n",
+                error
+            ),
             "{:?}",
             args
         );
@@ -255,10 +289,21 @@ fn login_requires_client_id_secret_and_scopes() {
 fn login_rejects_empty_scope() {
     let home = temp_home("login_rejects_empty_scope");
     let (output, _, stderr) = run(googauth(&home).args([
-        "login", "work", "-i", "my-id", "-s", "my-secret", "-o", "openid,,email",
+        "login",
+        "work",
+        "-i",
+        "my-id",
+        "-s",
+        "my-secret",
+        "-o",
+        "openid,,email",
     ]));
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(stderr.contains("You must specify at least one scope"), "{}", stderr);
+    assert!(
+        stderr.contains("You must specify at least one scope"),
+        "{}",
+        stderr
+    );
     assert!(!home.join(".googauth").exists());
 }
