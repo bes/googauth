@@ -1,3 +1,4 @@
+use openidconnect::ClaimsVerificationError;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -28,7 +29,7 @@ pub enum LibError {
     #[error("Could not refresh token")]
     CouldNotRefreshToken,
     #[error("Could not read claims")]
-    CouldNotReadClaims,
+    CouldNotReadClaims(#[source] ClaimsVerificationError),
     #[error("There were no scopes in the response")]
     NoScopes,
     #[error("Could not get a response from the login flow")]
@@ -39,6 +40,8 @@ pub enum LibError {
     CouldNotReadConfigCorrupt(String),
     #[error("OpenID error: {0}")]
     OpenIdError(String),
+    #[error("Failed to access token endpoint")]
+    TokenEndpointError(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("No local port in redirect URL")]
     NoRedirectPortError,
     #[error("Could not listen for the browser redirect on port {0}: {1}")]

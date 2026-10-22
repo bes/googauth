@@ -1,10 +1,12 @@
 use clap::{Arg, ArgAction, Command};
+use error_report::{exit_with_error, exit_with_message};
 use googauth_lib::{
     ConfigBasePath, ConfigFile, ConfigName, HttpClientError, HttpRequest, HttpResponse, LibError,
     check_token, get_access_token_from_config, google_login, http,
 };
-use std::process::exit;
 use std::str::FromStr;
+
+mod error_report;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -80,10 +82,7 @@ async fn main() {
 
     let config_base_path = match ConfigBasePath::from_home_dir() {
         Ok(googauth_config_base_path) => googauth_config_base_path,
-        Err(err) => {
-            print_error_and_exit(&err.to_string());
-            unreachable!()
-        }
+        Err(err) => exit_with_error(&err),
     };
 
     let matches = app.get_matches();
@@ -105,10 +104,7 @@ async fn main() {
                 Ok(config_list) => config_list,
                 // The configs directory is created by the first login
                 Err(LibError::ConfigsDirectoryNotADirectory(path)) if !path.exists() => Vec::new(),
-                Err(err) => {
-                    print_error_and_exit(&err.to_string());
-                    unreachable!()
-                }
+                Err(err) => exit_with_error(&err),
             };
             if config_list.is_empty() {
                 eprintln!("No configs available");
@@ -124,53 +120,38 @@ async fn main() {
         Some(("login", matches)) => {
             let config_name = match matches.get_one::<ConfigName>("config") {
                 Some(config_name) => config_name,
-                None => {
-                    print_error_and_exit("You must specify an configuration name");
-                    unreachable!()
-                }
+                None => exit_with_message("You must specify an configuration name"),
             };
             let mut config = match ConfigFile::read_config(config_name, &config_base_path) {
                 Err(_err) => {
                     // TODO: Check err?
                     let client_id = match matches.get_one::<String>("clientid") {
                         Some(client_id) => client_id,
-                        None => {
-                            print_error_and_exit(&format!(
-                                "You must specify a client id for the configuration {}",
-                                config_name
-                            ));
-                            unreachable!()
-                        }
+                        None => exit_with_message(&format!(
+                            "You must specify a client id for the configuration {}",
+                            config_name
+                        )),
                     };
                     let client_secret = match matches.get_one::<String>("secret") {
                         Some(client_secret) => client_secret,
-                        None => {
-                            print_error_and_exit(&format!(
-                                "You must specify a client secret for the configuration {}",
-                                config_name
-                            ));
-                            unreachable!()
-                        }
+                        None => exit_with_message(&format!(
+                            "You must specify a client secret for the configuration {}",
+                            config_name
+                        )),
                     };
                     let scopes = match matches.get_many::<String>("scopes") {
                         Some(scopes) => scopes.cloned().collect::<Vec<_>>(),
-                        None => {
-                            print_error_and_exit(&format!(
-                                "You must specify at least one scope for the configuration {}",
-                                config_name
-                            ));
-                            unreachable!()
-                        }
+                        None => exit_with_message(&format!(
+                            "You must specify at least one scope for the configuration {}",
+                            config_name
+                        )),
                     };
                     let redirect_url = match matches.get_one::<String>("redirect") {
                         Some(redirect_url) => redirect_url,
-                        None => {
-                            print_error_and_exit(&format!(
-                                "You must specify a redirect URL for the configuration {}",
-                                config_name
-                            ));
-                            unreachable!()
-                        }
+                        None => exit_with_message(&format!(
+                            "You must specify a redirect URL for the configuration {}",
+                            config_name
+                        )),
                     };
                     let new_config = ConfigFile::new(
                         config_name,
@@ -182,10 +163,7 @@ async fn main() {
 
                     match new_config.save_config(&config_base_path) {
                         Ok(_) => (),
-                        Err(e) => {
-                            print_error_and_exit(&e.to_string());
-                            unreachable!()
-                        }
+                        Err(e) => exit_with_error(&e),
                     }
 
                     if let Ok(config) = ConfigFile::config_file(config_name, &config_base_path) {
@@ -216,10 +194,7 @@ async fn main() {
 
             match google_login(&mut config, &config_base_path, &http_client).await {
                 Ok(_) => (),
-                Err(e) => {
-                    print_error_and_exit(&e.to_string());
-                    unreachable!()
-                }
+                Err(e) => exit_with_error(&e),
             }
 
             eprintln!(
@@ -234,10 +209,7 @@ async fn main() {
                     .await
                 {
                     Ok(access_token) => access_token,
-                    Err(e) => {
-                        print_error_and_exit(&e.to_string());
-                        unreachable!();
-                    }
+                    Err(e) => exit_with_error(&e),
                 };
             println!("{}", access_token.secret);
         }
@@ -246,10 +218,7 @@ async fn main() {
 
             let mut config = match ConfigFile::read_config(&config_name, &config_base_path) {
                 Ok(config) => config,
-                Err(err) => {
-                    print_error_and_exit(&err.to_string());
-                    unreachable!()
-                }
+                Err(err) => exit_with_error(&err),
             };
 
             if let Err(err) = check_token(
@@ -260,19 +229,15 @@ async fn main() {
             )
             .await
             {
-                print_error_and_exit(&err.to_string());
-                unreachable!()
+                exit_with_error(&err);
             }
 
             match &config.id_token {
                 Some(id_token) => println!("{}", id_token.secret),
-                None => {
-                    print_error_and_exit(&format!(
-                        "Could not read id token from {}. Is the configuration corrupt?",
-                        config.name
-                    ));
-                    unreachable!()
-                }
+                None => exit_with_message(&format!(
+                    "Could not read id token from {}. Is the configuration corrupt?",
+                    config.name
+                )),
             };
         }
         _ => unreachable!("clap requires a subcommand"),
@@ -297,9 +262,4 @@ async fn send_request(
 
     let body = response.bytes().await.map_err(Box::new)?;
     builder.body(body.to_vec()).map_err(HttpClientError::Http)
-}
-
-fn print_error_and_exit(error_str: &str) {
-    eprintln!("Error: {}", error_str);
-    exit(1);
 }
