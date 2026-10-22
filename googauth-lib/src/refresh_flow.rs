@@ -2,27 +2,25 @@ use crate::config_file::{ConfigBasePath, ConfigFile, Token};
 use crate::errors::LibError;
 use openidconnect::core::{CoreClient, CoreIdTokenVerifier, CoreProviderMetadata};
 use openidconnect::{
-    reqwest, ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken, Scope,
+    AsyncHttpClient, ClientId, ClientSecret, IssuerUrl, OAuth2TokenResponse, RefreshToken, Scope,
     TokenResponse,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub async fn refresh_google_login(
+/// The `http_client` must not follow redirects, since following redirects opens
+/// the client up to SSRF vulnerabilities.
+pub async fn refresh_google_login<C: for<'c> AsyncHttpClient<'c>>(
     config: &mut ConfigFile,
     config_base_path: &ConfigBasePath,
+    http_client: &C,
 ) -> Result<(), LibError> {
     let google_client_id = ClientId::new(config.client_id.to_string());
     let google_client_secret = ClientSecret::new(config.client_secret.to_string());
     let issuer_url =
         IssuerUrl::new("https://accounts.google.com".to_string()).expect("Invalid issuer URL");
-    let http_client = reqwest::ClientBuilder::new()
-        // Following redirects opens the client up to SSRF vulnerabilities.
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|openid_error| LibError::OpenIdError(openid_error.to_string()))?;
 
     // Fetch Google's OpenID Connect discovery document.
-    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, &http_client)
+    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, http_client)
         .await
         .map_err(|_| LibError::OpenIdError("Failed to discover OpenID Provider".to_string()))?;
 
@@ -52,7 +50,7 @@ pub async fn refresh_google_login(
         refresh_token_request = refresh_token_request.add_scope(Scope::new(scope.to_string()));
     }
 
-    let refresh_token_result = refresh_token_request.request_async(&http_client).await;
+    let refresh_token_result = refresh_token_request.request_async(http_client).await;
 
     let token_response = match refresh_token_result {
         Ok(rt) => rt,

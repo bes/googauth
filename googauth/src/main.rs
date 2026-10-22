@@ -1,10 +1,9 @@
-use std::process::exit;
-
 use clap::{Arg, ArgAction, Command};
-
 use googauth_lib::{
-    check_token, get_access_token_from_config, google_login, ConfigBasePath, ConfigFile,
+    ConfigBasePath, ConfigFile, HttpClientError, HttpRequest, HttpResponse, check_token,
+    get_access_token_from_config, google_login, http,
 };
+use std::process::exit;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -85,6 +84,17 @@ async fn main() {
 
     let matches = app.get_matches();
 
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("failed to install rustls crypto provider");
+
+    let reqwest_client = reqwest::Client::builder()
+        // Following redirects opens the client up to SSRF vulnerabilities - forbid redirects!
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("failed to build the HTTP client");
+    let http_client = |request| send_request(reqwest_client.clone(), request);
+
     match matches.subcommand() {
         Some(("list", _)) => {
             let config_list = match ConfigFile::list_configs(&config_base_path) {
@@ -111,8 +121,7 @@ async fn main() {
                     unreachable!()
                 }
             };
-            let mut config = match ConfigFile::read_config(config_name, &config_base_path)
-            {
+            let mut config = match ConfigFile::read_config(config_name, &config_base_path) {
                 Err(_err) => {
                     // TODO: Check err?
                     let client_id = match matches.get_one::<String>("clientid") {
@@ -171,9 +180,7 @@ async fn main() {
                         }
                     }
 
-                    if let Ok(config) =
-                        ConfigFile::config_file(config_name, &config_base_path)
-                    {
+                    if let Ok(config) = ConfigFile::config_file(config_name, &config_base_path) {
                         if let Some(config_str) = config.to_str() {
                             println!("Saved configuration to {}", config_str)
                         }
@@ -199,7 +206,7 @@ async fn main() {
                 }
             };
 
-            match google_login(&mut config, &config_base_path).await {
+            match google_login(&mut config, &config_base_path, &http_client).await {
                 Ok(_) => (),
                 Err(e) => {
                     print_error_and_exit(&e.to_string());
@@ -215,7 +222,9 @@ async fn main() {
         Some(("accesstoken", matches)) => {
             let config_name = matches.get_one::<String>("config").unwrap().clone();
             let access_token =
-                match get_access_token_from_config(&config_name, &config_base_path).await {
+                match get_access_token_from_config(&config_name, &config_base_path, &http_client)
+                    .await
+                {
                     Ok(access_token) => access_token,
                     Err(e) => {
                         print_error_and_exit(&e.to_string());
@@ -227,8 +236,7 @@ async fn main() {
         Some(("idtoken", matches)) => {
             let config_name = matches.get_one::<String>("config").unwrap().clone();
 
-            let mut config = match ConfigFile::read_config(&config_name, &config_base_path)
-            {
+            let mut config = match ConfigFile::read_config(&config_name, &config_base_path) {
                 Ok(config) => config,
                 Err(err) => {
                     eprintln!("Error when reading configuration: {:?}", err);
@@ -236,7 +244,14 @@ async fn main() {
                 }
             };
 
-            if let Err(err) = check_token(config.id_token.clone(), &mut config, &config_base_path).await {
+            if let Err(err) = check_token(
+                config.id_token.clone(),
+                &mut config,
+                &config_base_path,
+                &http_client,
+            )
+            .await
+            {
                 eprintln!("Error when checking the token: {:?}", err);
                 exit(1);
             }
@@ -256,6 +271,26 @@ async fn main() {
             println!("You must select a sub command. See --help");
         }
     }
+}
+
+async fn send_request(
+    client: reqwest::Client,
+    request: HttpRequest,
+) -> Result<HttpResponse, HttpClientError<reqwest::Error>> {
+    let response = client
+        .execute(request.try_into().map_err(Box::new)?)
+        .await
+        .map_err(Box::new)?;
+
+    let mut builder = http::Response::builder()
+        .status(response.status())
+        .version(response.version());
+    for (name, value) in response.headers() {
+        builder = builder.header(name, value);
+    }
+
+    let body = response.bytes().await.map_err(Box::new)?;
+    builder.body(body.to_vec()).map_err(HttpClientError::Http)
 }
 
 fn print_error_and_exit(error_str: &str) {

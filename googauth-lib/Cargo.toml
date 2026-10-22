@@ -11,7 +11,7 @@ documentation = "https://docs.rs/googauth-lib"
 readme = "README.md"
 
 [dependencies]
-openidconnect = { version = "4.0.1", features = ["rustls-tls", "reqwest"], default-features = false }
+openidconnect = { version = "4.0.1", default-features = false }
 thiserror = "2"
 url = "2"
 serde = { version = "1", features = ["derive"] }
